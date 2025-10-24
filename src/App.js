@@ -423,14 +423,314 @@ function EmpresasModule() {
 
 // Módulo Usuarios
 function UsuariosModule() {
+  const [usuarios, setUsuarios] = useState([]);
+  const [empresas, setEmpresas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({
+    nombre: '',
+    email: '',
+    telefono: '',
+    rol: 'ejecutivo',
+    empresaId: '',
+    activo: true
+  });
+
+  const roles = [
+    { value: 'administrador', label: 'Administrador', color: 'bg-purple-100 text-purple-800' },
+    { value: 'gerente', label: 'Gerente', color: 'bg-blue-100 text-blue-800' },
+    { value: 'ejecutivo', label: 'Ejecutivo', color: 'bg-green-100 text-green-800' },
+    { value: 'invitado', label: 'Invitado', color: 'bg-gray-100 text-gray-800' }
+  ];
+
+  // Cargar usuarios y empresas desde Firestore
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+
+      // Cargar usuarios
+      const usuariosSnapshot = await getDocs(collection(db, 'usuarios'));
+      const usuariosData = usuariosSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setUsuarios(usuariosData);
+
+      // Cargar empresas para el dropdown
+      const empresasSnapshot = await getDocs(collection(db, 'empresas'));
+      const empresasData = empresasSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setEmpresas(empresasData);
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingId) {
+        // Actualizar usuario existente
+        const usuarioRef = doc(db, 'usuarios', editingId);
+        await updateDoc(usuarioRef, formData);
+      } else {
+        // Crear nuevo usuario
+        await addDoc(collection(db, 'usuarios'), {
+          ...formData,
+          fechaCreacion: new Date().toISOString()
+        });
+      }
+      resetForm();
+      loadData();
+    } catch (error) {
+      console.error('Error guardando usuario:', error);
+    }
+  };
+
+  const handleEdit = (usuario) => {
+    setFormData({
+      nombre: usuario.nombre,
+      email: usuario.email,
+      telefono: usuario.telefono,
+      rol: usuario.rol,
+      empresaId: usuario.empresaId || '',
+      activo: usuario.activo
+    });
+    setEditingId(usuario.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('¿Estás seguro de eliminar este usuario?')) {
+      try {
+        await deleteDoc(doc(db, 'usuarios', id));
+        loadData();
+      } catch (error) {
+        console.error('Error eliminando usuario:', error);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      nombre: '',
+      email: '',
+      telefono: '',
+      rol: 'ejecutivo',
+      empresaId: '',
+      activo: true
+    });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  const getEmpresaNombre = (empresaId) => {
+    const empresa = empresas.find(e => e.id === empresaId);
+    return empresa ? empresa.nombre : 'Sin asignar';
+  };
+
+  const getRolData = (rolValue) => {
+    return roles.find(r => r.value === rolValue) || roles[2];
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
-        <h2 className="text-4xl font-bold">Usuarios y Roles</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-4xl font-bold">Usuarios y Roles</h2>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
+          >
+            {showForm ? <X size={24} /> : <Plus size={24} />}
+            <span className="text-xl">{showForm ? 'Cancelar' : 'Nuevo Usuario'}</span>
+          </button>
+        </div>
       </div>
-      <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
-        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Gestión de Usuarios</h3>
-        <p className="text-gray-600 text-lg">Módulo en desarrollo - FASE 1</p>
+
+      {/* Formulario */}
+      {showForm && (
+        <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
+          <h3 className="text-2xl font-semibold mb-6 text-blue-900">
+            {editingId ? 'Editar Usuario' : 'Nuevo Usuario'}
+          </h3>
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Nombre Completo *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.nombre}
+                  onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Email *</label>
+                <input
+                  type="email"
+                  required
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Teléfono</label>
+                <input
+                  type="tel"
+                  value={formData.telefono}
+                  onChange={(e) => setFormData({...formData, telefono: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Rol *</label>
+                <select
+                  required
+                  value={formData.rol}
+                  onChange={(e) => setFormData({...formData, rol: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  {roles.map(rol => (
+                    <option key={rol.value} value={rol.value}>{rol.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-lg font-medium text-gray-700 mb-2">Empresa Asignada</label>
+                <select
+                  value={formData.empresaId}
+                  onChange={(e) => setFormData({...formData, empresaId: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  <option value="">Sin asignar</option>
+                  {empresas.map(empresa => (
+                    <option key={empresa.id} value={empresa.id}>{empresa.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={formData.activo}
+                  onChange={(e) => setFormData({...formData, activo: e.target.checked})}
+                  className="w-5 h-5"
+                />
+                <label className="text-lg font-medium text-gray-700">Usuario Activo</label>
+              </div>
+            </div>
+            <div className="flex gap-4 mt-8">
+              <button
+                type="submit"
+                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all"
+              >
+                <Save size={24} />
+                <span className="text-xl">{editingId ? 'Actualizar' : 'Guardar'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="flex items-center gap-2 bg-gray-300 text-gray-700 px-8 py-3 rounded-lg font-semibold hover:bg-gray-400 transition-all"
+              >
+                <X size={24} />
+                <span className="text-xl">Cancelar</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Lista de Usuarios */}
+      <div className="bg-white rounded-xl shadow-md p-8 border-l-4 border-orange-500">
+        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Lista de Usuarios</h3>
+
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-4 border-orange-500"></div>
+            <p className="text-gray-600 mt-4">Cargando usuarios...</p>
+          </div>
+        ) : usuarios.length === 0 ? (
+          <div className="text-center py-12">
+            <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600 text-lg">No hay usuarios registrados</p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="mt-4 text-blue-600 font-semibold hover:text-blue-700"
+            >
+              Crear primer usuario
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Nombre</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Email</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Teléfono</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Rol</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Empresa</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Estado</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usuarios.map(usuario => {
+                  const rolData = getRolData(usuario.rol);
+                  return (
+                    <tr key={usuario.id} className="border-b border-gray-200 hover:bg-gray-50">
+                      <td className="px-6 py-4 text-lg text-gray-900 font-medium">{usuario.nombre}</td>
+                      <td className="px-6 py-4 text-lg text-gray-600">{usuario.email}</td>
+                      <td className="px-6 py-4 text-lg text-gray-600">{usuario.telefono || '-'}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${rolData.color}`}>
+                          {rolData.label}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-lg text-gray-600">{getEmpresaNombre(usuario.empresaId)}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                          usuario.activo
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {usuario.activo ? 'Activo' : 'Inactivo'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEdit(usuario)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                          >
+                            <Edit2 size={20} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(usuario.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
