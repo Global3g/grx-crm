@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
-import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X } from 'lucide-react';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { db } from './firebase';
 
 export default function App() {
   const [currentModule, setCurrentModule] = useState('dashboard');
@@ -139,14 +141,281 @@ function DashboardModule() {
 
 // Módulo Empresas
 function EmpresasModule() {
+  const [empresas, setEmpresas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({
+    nombre: '',
+    rfc: '',
+    direccion: '',
+    telefono: '',
+    email: '',
+    sitioWeb: '',
+    activa: true
+  });
+
+  // Cargar empresas desde Firestore
+  useEffect(() => {
+    loadEmpresas();
+  }, []);
+
+  const loadEmpresas = async () => {
+    try {
+      setLoading(true);
+      const querySnapshot = await getDocs(collection(db, 'empresas'));
+      const empresasData = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setEmpresas(empresasData);
+    } catch (error) {
+      console.error('Error cargando empresas:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingId) {
+        // Actualizar empresa existente
+        const empresaRef = doc(db, 'empresas', editingId);
+        await updateDoc(empresaRef, formData);
+      } else {
+        // Crear nueva empresa
+        await addDoc(collection(db, 'empresas'), {
+          ...formData,
+          fechaCreacion: new Date().toISOString()
+        });
+      }
+      resetForm();
+      loadEmpresas();
+    } catch (error) {
+      console.error('Error guardando empresa:', error);
+    }
+  };
+
+  const handleEdit = (empresa) => {
+    setFormData({
+      nombre: empresa.nombre,
+      rfc: empresa.rfc,
+      direccion: empresa.direccion,
+      telefono: empresa.telefono,
+      email: empresa.email,
+      sitioWeb: empresa.sitioWeb,
+      activa: empresa.activa
+    });
+    setEditingId(empresa.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('¿Estás seguro de eliminar esta empresa?')) {
+      try {
+        await deleteDoc(doc(db, 'empresas', id));
+        loadEmpresas();
+      } catch (error) {
+        console.error('Error eliminando empresa:', error);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      nombre: '',
+      rfc: '',
+      direccion: '',
+      telefono: '',
+      email: '',
+      sitioWeb: '',
+      activa: true
+    });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
-        <h2 className="text-4xl font-bold">Empresas</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-4xl font-bold">Empresas</h2>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
+          >
+            {showForm ? <X size={24} /> : <Plus size={24} />}
+            <span className="text-xl">{showForm ? 'Cancelar' : 'Nueva Empresa'}</span>
+          </button>
+        </div>
       </div>
-      <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
-        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Gestión de Empresas</h3>
-        <p className="text-gray-600 text-lg">Módulo en desarrollo - FASE 1</p>
+
+      {/* Formulario */}
+      {showForm && (
+        <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
+          <h3 className="text-2xl font-semibold mb-6 text-blue-900">
+            {editingId ? 'Editar Empresa' : 'Nueva Empresa'}
+          </h3>
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Nombre *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.nombre}
+                  onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">RFC</label>
+                <input
+                  type="text"
+                  value={formData.rfc}
+                  onChange={(e) => setFormData({...formData, rfc: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-lg font-medium text-gray-700 mb-2">Dirección</label>
+                <input
+                  type="text"
+                  value={formData.direccion}
+                  onChange={(e) => setFormData({...formData, direccion: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Teléfono</label>
+                <input
+                  type="tel"
+                  value={formData.telefono}
+                  onChange={(e) => setFormData({...formData, telefono: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Email</label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Sitio Web</label>
+                <input
+                  type="url"
+                  value={formData.sitioWeb}
+                  onChange={(e) => setFormData({...formData, sitioWeb: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={formData.activa}
+                  onChange={(e) => setFormData({...formData, activa: e.target.checked})}
+                  className="w-5 h-5"
+                />
+                <label className="text-lg font-medium text-gray-700">Empresa Activa</label>
+              </div>
+            </div>
+            <div className="flex gap-4 mt-8">
+              <button
+                type="submit"
+                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all"
+              >
+                <Save size={24} />
+                <span className="text-xl">{editingId ? 'Actualizar' : 'Guardar'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="flex items-center gap-2 bg-gray-300 text-gray-700 px-8 py-3 rounded-lg font-semibold hover:bg-gray-400 transition-all"
+              >
+                <X size={24} />
+                <span className="text-xl">Cancelar</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Lista de Empresas */}
+      <div className="bg-white rounded-xl shadow-md p-8 border-l-4 border-orange-500">
+        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Lista de Empresas</h3>
+
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-4 border-orange-500"></div>
+            <p className="text-gray-600 mt-4">Cargando empresas...</p>
+          </div>
+        ) : empresas.length === 0 ? (
+          <div className="text-center py-12">
+            <Building2 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600 text-lg">No hay empresas registradas</p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="mt-4 text-blue-600 font-semibold hover:text-blue-700"
+            >
+              Crear primera empresa
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Nombre</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">RFC</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Teléfono</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Email</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Estado</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {empresas.map(empresa => (
+                  <tr key={empresa.id} className="border-b border-gray-200 hover:bg-gray-50">
+                    <td className="px-6 py-4 text-lg text-gray-900 font-medium">{empresa.nombre}</td>
+                    <td className="px-6 py-4 text-lg text-gray-600">{empresa.rfc || '-'}</td>
+                    <td className="px-6 py-4 text-lg text-gray-600">{empresa.telefono || '-'}</td>
+                    <td className="px-6 py-4 text-lg text-gray-600">{empresa.email || '-'}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                        empresa.activa
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {empresa.activa ? 'Activa' : 'Inactiva'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEdit(empresa)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                        >
+                          <Edit2 size={20} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(empresa.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

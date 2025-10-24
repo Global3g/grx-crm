@@ -2,14 +2,13 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
-// TODO: Configurar Firebase project
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDIhm6U1Ou2Gm99lr_Zzlce-8r5L2bhCnM",
+  authDomain: "grx-crm.firebaseapp.com",
+  projectId: "grx-crm",
+  storageBucket: "grx-crm.firebasestorage.app",
+  messagingSenderId: "743985678551",
+  appId: "1:743985678551:web:a4236c717568177d3a0892"
 };
 
 // Initialize Firebase
