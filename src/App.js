@@ -212,22 +212,27 @@ function EmpresasModule() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Guardando empresa...', formData);
     try {
       if (editingId) {
         // Actualizar empresa existente
         const empresaRef = doc(db, 'empresas', editingId);
         await updateDoc(empresaRef, formData);
+        console.log('Empresa actualizada');
       } else {
         // Crear nueva empresa
-        await addDoc(collection(db, 'empresas'), {
+        const docRef = await addDoc(collection(db, 'empresas'), {
           ...formData,
           fechaCreacion: new Date().toISOString()
         });
+        console.log('Empresa creada con ID:', docRef.id);
       }
       resetForm();
       loadEmpresas();
+      alert('Empresa guardada exitosamente!');
     } catch (error) {
       console.error('Error guardando empresa:', error);
+      alert('Error guardando empresa: ' + error.message);
     }
   };
 
