@@ -36,12 +36,21 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen bg-gray-100">
-      <div className="w-80 flex-shrink-0 bg-white shadow-lg border-r-4 border-orange-500">
-        <div className="py-6 px-4 border-b-2 border-gray-200 bg-white">
-          <div className="flex items-center justify-center gap-2">
-            <span className="text-5xl font-black text-black">GRX</span>
-            <div className="bg-blue-600 text-white px-5 py-2 rounded-xl font-black text-5xl">
-              CRM
+      <div className="w-80 flex-shrink-0 bg-gradient-to-b from-gray-900 to-gray-800 shadow-lg border-r-4 border-orange-500">
+        <div className="py-6 px-4 border-b-2 border-gray-700">
+          <div className="flex flex-col items-center justify-center">
+            <svg viewBox="0 0 200 60" className="w-48 h-auto mb-2">
+              <defs>
+                <linearGradient id="grxGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style={{stopColor: '#4A9FD8', stopOpacity: 1}} />
+                  <stop offset="100%" style={{stopColor: '#7DBFE5', stopOpacity: 1}} />
+                </linearGradient>
+              </defs>
+              <text x="10" y="35" fill="url(#grxGradient)" fontSize="40" fontWeight="900" fontFamily="Arial, sans-serif">GRX</text>
+              <text x="10" y="52" fill="white" fontSize="12" fontWeight="300" fontFamily="Arial, sans-serif" letterSpacing="4">HOLDINGS</text>
+            </svg>
+            <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-4 py-1 rounded-lg font-bold text-sm tracking-wider mt-1">
+              CRM SYSTEM
             </div>
           </div>
         </div>
@@ -54,8 +63,8 @@ export default function App() {
                 onClick={() => setCurrentModule(module.id)}
                 className={`w-full flex items-center gap-4 px-6 py-4 rounded-lg mb-3 transition-all ${
                   currentModule === module.id
-                    ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md'
-                    : 'text-gray-900 hover:bg-orange-50 hover:text-orange-600'
+                    ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg'
+                    : 'text-gray-300 hover:bg-gray-700 hover:text-white'
                 }`}
               >
                 <Icon size={56} />
