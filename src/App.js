@@ -39,28 +39,20 @@ export default function App() {
       <div className="w-80 flex-shrink-0 bg-gradient-to-b from-gray-900 to-gray-800 shadow-lg border-r-4 border-orange-500">
         <div className="py-8 px-6 border-b-2 border-gray-700">
           <div className="flex flex-col items-center justify-center">
-            {/* Logo GRX */}
-            <div className="mb-3">
-              <div className="flex items-baseline gap-1">
-                <span className="text-6xl font-black tracking-tight" style={{
-                  background: 'linear-gradient(90deg, #5BA7D8 0%, #89C5E8 50%, #B8B8B8 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text'
-                }}>
-                  GR
-                </span>
-                <span className="text-6xl font-black tracking-tight" style={{
-                  background: 'linear-gradient(90deg, #89C5E8 0%, #B8B8B8 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text'
-                }}>
-                  X
-                </span>
-              </div>
-              <div className="text-white text-xs font-light tracking-[0.3em] mt-1 ml-1">
-                HOLDINGS
+            {/* Logo GRX Holdings */}
+            <img
+              src="/grx-logo.png"
+              alt="GRX Holdings"
+              className="w-56 h-auto mb-4"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.nextSibling.style.display = 'block';
+              }}
+            />
+            {/* Fallback si no hay imagen */}
+            <div style={{display: 'none'}}>
+              <div className="text-5xl font-black tracking-tight text-white mb-2">
+                GRX HOLDINGS
               </div>
             </div>
             {/* Badge CRM */}
@@ -172,13 +164,30 @@ function EmpresasModule() {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({
     nombre: '',
-    rfc: '',
+    pais: 'MX',
+    identificadorFiscal: '',
     direccion: '',
     telefono: '',
     email: '',
     sitioWeb: '',
+    logo: '',
     activa: true
   });
+
+  const paises = [
+    { code: 'MX', name: 'México', flag: '🇲🇽', taxLabel: 'RFC', taxPlaceholder: 'Ej: ABC123456XYZ' },
+    { code: 'ES', name: 'España', flag: '🇪🇸', taxLabel: 'CIF/NIF/NIE', taxPlaceholder: 'Ej: B12345678' },
+    { code: 'US', name: 'Estados Unidos', flag: '🇺🇸', taxLabel: 'EIN', taxPlaceholder: 'Ej: 12-3456789' },
+    { code: 'CO', name: 'Colombia', flag: '🇨🇴', taxLabel: 'NIT', taxPlaceholder: 'Ej: 123456789-0' },
+    { code: 'AR', name: 'Argentina', flag: '🇦🇷', taxLabel: 'CUIT', taxPlaceholder: 'Ej: 20-12345678-9' },
+    { code: 'CL', name: 'Chile', flag: '🇨🇱', taxLabel: 'RUT', taxPlaceholder: 'Ej: 12.345.678-9' },
+    { code: 'PE', name: 'Perú', flag: '🇵🇪', taxLabel: 'RUC', taxPlaceholder: 'Ej: 12345678901' },
+    { code: 'BR', name: 'Brasil', flag: '🇧🇷', taxLabel: 'CNPJ', taxPlaceholder: 'Ej: 12.345.678/0001-90' },
+  ];
+
+  const getPaisInfo = () => {
+    return paises.find(p => p.code === formData.pais) || paises[0];
+  };
 
   // Cargar empresas desde Firestore
   useEffect(() => {
@@ -225,11 +234,13 @@ function EmpresasModule() {
   const handleEdit = (empresa) => {
     setFormData({
       nombre: empresa.nombre,
-      rfc: empresa.rfc,
+      pais: empresa.pais || 'MX',
+      identificadorFiscal: empresa.identificadorFiscal || empresa.rfc || '',
       direccion: empresa.direccion,
       telefono: empresa.telefono,
       email: empresa.email,
       sitioWeb: empresa.sitioWeb,
+      logo: empresa.logo || '',
       activa: empresa.activa
     });
     setEditingId(empresa.id);
@@ -247,14 +258,27 @@ function EmpresasModule() {
     }
   };
 
+  const handleLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData({...formData, logo: reader.result});
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       nombre: '',
-      rfc: '',
+      pais: 'MX',
+      identificadorFiscal: '',
       direccion: '',
       telefono: '',
       email: '',
       sitioWeb: '',
+      logo: '',
       activa: true
     });
     setEditingId(null);
@@ -284,75 +308,131 @@ function EmpresasModule() {
           </h3>
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-2 gap-6">
+              {/* Selector de País */}
               <div>
-                <label className="block text-lg font-medium text-gray-700 mb-2">Nombre *</label>
+                <label className="block text-lg font-medium text-gray-700 mb-2">País * {getPaisInfo().flag}</label>
+                <select
+                  required
+                  value={formData.pais}
+                  onChange={(e) => setFormData({...formData, pais: e.target.value, identificadorFiscal: ''})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                >
+                  {paises.map(pais => (
+                    <option key={pais.code} value={pais.code}>
+                      {pais.flag} {pais.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Nombre */}
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Nombre de la Empresa *</label>
                 <input
                   type="text"
                   required
                   value={formData.nombre}
                   onChange={(e) => setFormData({...formData, nombre: e.target.value})}
-                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                  placeholder="Ej: Acme Corporation"
                 />
               </div>
+
+              {/* Identificador Fiscal dinámico */}
               <div>
-                <label className="block text-lg font-medium text-gray-700 mb-2">RFC</label>
+                <label className="block text-lg font-medium text-gray-700 mb-2">
+                  {getPaisInfo().taxLabel} *
+                </label>
                 <input
                   type="text"
-                  value={formData.rfc}
-                  onChange={(e) => setFormData({...formData, rfc: e.target.value})}
-                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  required
+                  value={formData.identificadorFiscal}
+                  onChange={(e) => setFormData({...formData, identificadorFiscal: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                  placeholder={getPaisInfo().taxPlaceholder}
                 />
               </div>
+
+              {/* Logo de la Empresa */}
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Logo de la Empresa</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                />
+                {formData.logo && (
+                  <div className="mt-2">
+                    <img src={formData.logo} alt="Logo preview" className="h-16 w-auto object-contain border border-gray-200 rounded p-2" />
+                  </div>
+                )}
+              </div>
+
+              {/* Dirección */}
               <div className="col-span-2">
                 <label className="block text-lg font-medium text-gray-700 mb-2">Dirección</label>
                 <input
                   type="text"
                   value={formData.direccion}
                   onChange={(e) => setFormData({...formData, direccion: e.target.value})}
-                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                  placeholder="Calle, número, colonia, ciudad"
                 />
               </div>
+
+              {/* Teléfono */}
               <div>
                 <label className="block text-lg font-medium text-gray-700 mb-2">Teléfono</label>
                 <input
                   type="tel"
                   value={formData.telefono}
                   onChange={(e) => setFormData({...formData, telefono: e.target.value})}
-                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                  placeholder="+52 123 456 7890"
                 />
               </div>
+
+              {/* Email */}
               <div>
                 <label className="block text-lg font-medium text-gray-700 mb-2">Email</label>
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
-                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                  placeholder="contacto@empresa.com"
                 />
               </div>
+
+              {/* Sitio Web */}
               <div>
                 <label className="block text-lg font-medium text-gray-700 mb-2">Sitio Web</label>
                 <input
                   type="url"
                   value={formData.sitioWeb}
                   onChange={(e) => setFormData({...formData, sitioWeb: e.target.value})}
-                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                  placeholder="https://www.empresa.com"
                 />
               </div>
+
+              {/* Estado Activa */}
               <div className="flex items-center gap-3">
                 <input
                   type="checkbox"
                   checked={formData.activa}
                   onChange={(e) => setFormData({...formData, activa: e.target.checked})}
-                  className="w-5 h-5"
+                  className="w-5 h-5 text-orange-500 focus:ring-orange-500"
                 />
                 <label className="text-lg font-medium text-gray-700">Empresa Activa</label>
               </div>
             </div>
+
             <div className="flex gap-4 mt-8">
               <button
                 type="submit"
-                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all"
+                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all shadow-md"
               >
                 <Save size={24} />
                 <span className="text-xl">{editingId ? 'Actualizar' : 'Guardar'}</span>
@@ -395,48 +475,70 @@ function EmpresasModule() {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Nombre</th>
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">RFC</th>
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Teléfono</th>
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Email</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Logo</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Empresa</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">País</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">ID Fiscal</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Contacto</th>
                   <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Estado</th>
                   <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {empresas.map(empresa => (
-                  <tr key={empresa.id} className="border-b border-gray-200 hover:bg-gray-50">
-                    <td className="px-6 py-4 text-lg text-gray-900 font-medium">{empresa.nombre}</td>
-                    <td className="px-6 py-4 text-lg text-gray-600">{empresa.rfc || '-'}</td>
-                    <td className="px-6 py-4 text-lg text-gray-600">{empresa.telefono || '-'}</td>
-                    <td className="px-6 py-4 text-lg text-gray-600">{empresa.email || '-'}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                        empresa.activa
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {empresa.activa ? 'Activa' : 'Inactiva'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleEdit(empresa)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                        >
-                          <Edit2 size={20} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(empresa.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                        >
-                          <Trash2 size={20} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {empresas.map(empresa => {
+                  const paisInfo = paises.find(p => p.code === (empresa.pais || 'MX')) || paises[0];
+                  return (
+                    <tr key={empresa.id} className="border-b border-gray-200 hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        {empresa.logo ? (
+                          <img src={empresa.logo} alt={empresa.nombre} className="h-12 w-12 object-contain" />
+                        ) : (
+                          <div className="h-12 w-12 bg-gray-200 rounded flex items-center justify-center">
+                            <Building2 className="w-6 h-6 text-gray-400" />
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-lg text-gray-900 font-medium">{empresa.nombre}</td>
+                      <td className="px-6 py-4 text-lg">
+                        <span className="text-2xl mr-2">{paisInfo.flag}</span>
+                        <span className="text-gray-600">{paisInfo.name}</span>
+                      </td>
+                      <td className="px-6 py-4 text-lg text-gray-600">
+                        <div className="text-xs text-gray-500">{paisInfo.taxLabel}</div>
+                        <div className="font-mono">{empresa.identificadorFiscal || empresa.rfc || '-'}</div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        <div>{empresa.telefono || '-'}</div>
+                        <div className="text-xs">{empresa.email || '-'}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                          empresa.activa
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {empresa.activa ? 'Activa' : 'Inactiva'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEdit(empresa)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                          >
+                            <Edit2 size={20} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(empresa.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
