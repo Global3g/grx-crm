@@ -738,14 +738,365 @@ function UsuariosModule() {
 
 // Módulo Clientes
 function ClientesModule() {
+  const [clientes, setClientes] = useState([]);
+  const [empresas, setEmpresas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({
+    nombre: '',
+    empresaId: '',
+    email: '',
+    telefono: '',
+    cargo: '',
+    industria: '',
+    ubicacion: '',
+    etiquetas: '',
+    notas: '',
+    activo: true
+  });
+
+  const industrias = ['Tecnología', 'Retail', 'Manufactura', 'Servicios', 'Construcción', 'Educación', 'Salud', 'Otro'];
+
+  // Cargar clientes y empresas desde Firestore
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+
+      // Cargar clientes
+      const clientesSnapshot = await getDocs(collection(db, 'clientes'));
+      const clientesData = clientesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setClientes(clientesData);
+
+      // Cargar empresas para el dropdown
+      const empresasSnapshot = await getDocs(collection(db, 'empresas'));
+      const empresasData = empresasSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setEmpresas(empresasData);
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const dataToSave = {
+        ...formData,
+        etiquetas: formData.etiquetas ? formData.etiquetas.split(',').map(t => t.trim()) : []
+      };
+
+      if (editingId) {
+        // Actualizar cliente existente
+        const clienteRef = doc(db, 'clientes', editingId);
+        await updateDoc(clienteRef, dataToSave);
+      } else {
+        // Crear nuevo cliente
+        await addDoc(collection(db, 'clientes'), {
+          ...dataToSave,
+          fechaCreacion: new Date().toISOString()
+        });
+      }
+      resetForm();
+      loadData();
+    } catch (error) {
+      console.error('Error guardando cliente:', error);
+    }
+  };
+
+  const handleEdit = (cliente) => {
+    setFormData({
+      nombre: cliente.nombre,
+      empresaId: cliente.empresaId || '',
+      email: cliente.email,
+      telefono: cliente.telefono,
+      cargo: cliente.cargo,
+      industria: cliente.industria,
+      ubicacion: cliente.ubicacion,
+      etiquetas: Array.isArray(cliente.etiquetas) ? cliente.etiquetas.join(', ') : '',
+      notas: cliente.notas,
+      activo: cliente.activo
+    });
+    setEditingId(cliente.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('¿Estás seguro de eliminar este cliente?')) {
+      try {
+        await deleteDoc(doc(db, 'clientes', id));
+        loadData();
+      } catch (error) {
+        console.error('Error eliminando cliente:', error);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      nombre: '',
+      empresaId: '',
+      email: '',
+      telefono: '',
+      cargo: '',
+      industria: '',
+      ubicacion: '',
+      etiquetas: '',
+      notas: '',
+      activo: true
+    });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  const getEmpresaNombre = (empresaId) => {
+    const empresa = empresas.find(e => e.id === empresaId);
+    return empresa ? empresa.nombre : 'Sin empresa';
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
-        <h2 className="text-4xl font-bold">Clientes</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-4xl font-bold">Clientes</h2>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
+          >
+            {showForm ? <X size={24} /> : <Plus size={24} />}
+            <span className="text-xl">{showForm ? 'Cancelar' : 'Nuevo Cliente'}</span>
+          </button>
+        </div>
       </div>
-      <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
-        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Gestión de Clientes</h3>
-        <p className="text-gray-600 text-lg">Módulo en desarrollo - FASE 2</p>
+
+      {/* Formulario */}
+      {showForm && (
+        <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
+          <h3 className="text-2xl font-semibold mb-6 text-blue-900">
+            {editingId ? 'Editar Cliente' : 'Nuevo Cliente'}
+          </h3>
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Nombre Completo *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.nombre}
+                  onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Empresa Asignada</label>
+                <select
+                  value={formData.empresaId}
+                  onChange={(e) => setFormData({...formData, empresaId: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  <option value="">Sin empresa</option>
+                  {empresas.map(empresa => (
+                    <option key={empresa.id} value={empresa.id}>{empresa.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Email *</label>
+                <input
+                  type="email"
+                  required
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Teléfono</label>
+                <input
+                  type="tel"
+                  value={formData.telefono}
+                  onChange={(e) => setFormData({...formData, telefono: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Cargo</label>
+                <input
+                  type="text"
+                  value={formData.cargo}
+                  onChange={(e) => setFormData({...formData, cargo: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Industria</label>
+                <select
+                  value={formData.industria}
+                  onChange={(e) => setFormData({...formData, industria: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  <option value="">Seleccionar industria</option>
+                  {industrias.map(ind => (
+                    <option key={ind} value={ind}>{ind}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Ubicación</label>
+                <input
+                  type="text"
+                  value={formData.ubicacion}
+                  onChange={(e) => setFormData({...formData, ubicacion: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  placeholder="Ciudad, País"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Etiquetas (separadas por coma)</label>
+                <input
+                  type="text"
+                  value={formData.etiquetas}
+                  onChange={(e) => setFormData({...formData, etiquetas: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  placeholder="VIP, Prospecto, Frecuente"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-lg font-medium text-gray-700 mb-2">Notas</label>
+                <textarea
+                  value={formData.notas}
+                  onChange={(e) => setFormData({...formData, notas: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  rows="3"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={formData.activo}
+                  onChange={(e) => setFormData({...formData, activo: e.target.checked})}
+                  className="w-5 h-5"
+                />
+                <label className="text-lg font-medium text-gray-700">Cliente Activo</label>
+              </div>
+            </div>
+            <div className="flex gap-4 mt-8">
+              <button
+                type="submit"
+                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all"
+              >
+                <Save size={24} />
+                <span className="text-xl">{editingId ? 'Actualizar' : 'Guardar'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="flex items-center gap-2 bg-gray-300 text-gray-700 px-8 py-3 rounded-lg font-semibold hover:bg-gray-400 transition-all"
+              >
+                <X size={24} />
+                <span className="text-xl">Cancelar</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Lista de Clientes */}
+      <div className="bg-white rounded-xl shadow-md p-8 border-l-4 border-orange-500">
+        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Lista de Clientes</h3>
+
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-4 border-orange-500"></div>
+            <p className="text-gray-600 mt-4">Cargando clientes...</p>
+          </div>
+        ) : clientes.length === 0 ? (
+          <div className="text-center py-12">
+            <UserCircle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600 text-lg">No hay clientes registrados</p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="mt-4 text-blue-600 font-semibold hover:text-blue-700"
+            >
+              Crear primer cliente
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Nombre</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Email</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Cargo</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Industria</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Empresa</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Etiquetas</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Estado</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clientes.map(cliente => (
+                  <tr key={cliente.id} className="border-b border-gray-200 hover:bg-gray-50">
+                    <td className="px-6 py-4 text-lg text-gray-900 font-medium">{cliente.nombre}</td>
+                    <td className="px-6 py-4 text-lg text-gray-600">{cliente.email}</td>
+                    <td className="px-6 py-4 text-lg text-gray-600">{cliente.cargo || '-'}</td>
+                    <td className="px-6 py-4 text-lg text-gray-600">{cliente.industria || '-'}</td>
+                    <td className="px-6 py-4 text-lg text-gray-600">{getEmpresaNombre(cliente.empresaId)}</td>
+                    <td className="px-6 py-4">
+                      {Array.isArray(cliente.etiquetas) && cliente.etiquetas.length > 0 ? (
+                        <div className="flex gap-1 flex-wrap">
+                          {cliente.etiquetas.map((etiqueta, idx) => (
+                            <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                              {etiqueta}
+                            </span>
+                          ))}
+                        </div>
+                      ) : '-'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                        cliente.activo
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {cliente.activo ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEdit(cliente)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                        >
+                          <Edit2 size={20} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(cliente.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
