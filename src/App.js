@@ -37,19 +37,34 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen bg-gray-100">
       <div className="w-80 flex-shrink-0 bg-gradient-to-b from-gray-900 to-gray-800 shadow-lg border-r-4 border-orange-500">
-        <div className="py-6 px-4 border-b-2 border-gray-700">
+        <div className="py-8 px-6 border-b-2 border-gray-700">
           <div className="flex flex-col items-center justify-center">
-            <svg viewBox="0 0 200 60" className="w-48 h-auto mb-2">
-              <defs>
-                <linearGradient id="grxGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" style={{stopColor: '#4A9FD8', stopOpacity: 1}} />
-                  <stop offset="100%" style={{stopColor: '#7DBFE5', stopOpacity: 1}} />
-                </linearGradient>
-              </defs>
-              <text x="10" y="35" fill="url(#grxGradient)" fontSize="40" fontWeight="900" fontFamily="Arial, sans-serif">GRX</text>
-              <text x="10" y="52" fill="white" fontSize="12" fontWeight="300" fontFamily="Arial, sans-serif" letterSpacing="4">HOLDINGS</text>
-            </svg>
-            <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-4 py-1 rounded-lg font-bold text-sm tracking-wider mt-1">
+            {/* Logo GRX */}
+            <div className="mb-3">
+              <div className="flex items-baseline gap-1">
+                <span className="text-6xl font-black tracking-tight" style={{
+                  background: 'linear-gradient(90deg, #5BA7D8 0%, #89C5E8 50%, #B8B8B8 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text'
+                }}>
+                  GR
+                </span>
+                <span className="text-6xl font-black tracking-tight" style={{
+                  background: 'linear-gradient(90deg, #89C5E8 0%, #B8B8B8 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text'
+                }}>
+                  X
+                </span>
+              </div>
+              <div className="text-white text-xs font-light tracking-[0.3em] mt-1 ml-1">
+                HOLDINGS
+              </div>
+            </div>
+            {/* Badge CRM */}
+            <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-5 py-2 rounded-lg font-bold text-sm tracking-widest shadow-lg">
               CRM SYSTEM
             </div>
           </div>
