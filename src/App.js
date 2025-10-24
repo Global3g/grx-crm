@@ -1104,14 +1104,382 @@ function ClientesModule() {
 
 // Módulo Interacciones
 function InteraccionesModule() {
+  const [interacciones, setInteracciones] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({
+    tipo: 'llamada',
+    clienteId: '',
+    usuarioId: '',
+    fecha: new Date().toISOString().split('T')[0],
+    hora: '',
+    duracion: '',
+    notas: '',
+    seguimiento: '',
+    completado: false
+  });
+
+  const tiposInteraccion = [
+    { value: 'llamada', label: 'Llamada', icon: '📞', color: 'bg-blue-100 text-blue-800' },
+    { value: 'email', label: 'Email', icon: '📧', color: 'bg-purple-100 text-purple-800' },
+    { value: 'reunion', label: 'Reunión', icon: '🤝', color: 'bg-green-100 text-green-800' },
+    { value: 'mensaje', label: 'Mensaje', icon: '💬', color: 'bg-yellow-100 text-yellow-800' },
+    { value: 'otro', label: 'Otro', icon: '📝', color: 'bg-gray-100 text-gray-800' }
+  ];
+
+  // Cargar datos desde Firestore
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+
+      // Cargar interacciones
+      const interaccionesSnapshot = await getDocs(collection(db, 'interacciones'));
+      const interaccionesData = interaccionesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setInteracciones(interaccionesData.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)));
+
+      // Cargar clientes
+      const clientesSnapshot = await getDocs(collection(db, 'clientes'));
+      const clientesData = clientesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setClientes(clientesData);
+
+      // Cargar usuarios
+      const usuariosSnapshot = await getDocs(collection(db, 'usuarios'));
+      const usuariosData = usuariosSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setUsuarios(usuariosData);
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingId) {
+        // Actualizar interacción existente
+        const interaccionRef = doc(db, 'interacciones', editingId);
+        await updateDoc(interaccionRef, formData);
+      } else {
+        // Crear nueva interacción
+        await addDoc(collection(db, 'interacciones'), {
+          ...formData,
+          fechaCreacion: new Date().toISOString()
+        });
+      }
+      resetForm();
+      loadData();
+    } catch (error) {
+      console.error('Error guardando interacción:', error);
+    }
+  };
+
+  const handleEdit = (interaccion) => {
+    setFormData({
+      tipo: interaccion.tipo,
+      clienteId: interaccion.clienteId || '',
+      usuarioId: interaccion.usuarioId || '',
+      fecha: interaccion.fecha,
+      hora: interaccion.hora || '',
+      duracion: interaccion.duracion || '',
+      notas: interaccion.notas,
+      seguimiento: interaccion.seguimiento || '',
+      completado: interaccion.completado
+    });
+    setEditingId(interaccion.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('¿Estás seguro de eliminar esta interacción?')) {
+      try {
+        await deleteDoc(doc(db, 'interacciones', id));
+        loadData();
+      } catch (error) {
+        console.error('Error eliminando interacción:', error);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      tipo: 'llamada',
+      clienteId: '',
+      usuarioId: '',
+      fecha: new Date().toISOString().split('T')[0],
+      hora: '',
+      duracion: '',
+      notas: '',
+      seguimiento: '',
+      completado: false
+    });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  const getClienteNombre = (clienteId) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    return cliente ? cliente.nombre : 'Sin cliente';
+  };
+
+  const getUsuarioNombre = (usuarioId) => {
+    const usuario = usuarios.find(u => u.id === usuarioId);
+    return usuario ? usuario.nombre : 'Sin usuario';
+  };
+
+  const getTipoData = (tipoValue) => {
+    return tiposInteraccion.find(t => t.value === tipoValue) || tiposInteraccion[0];
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
-        <h2 className="text-4xl font-bold">Interacciones</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-4xl font-bold">Interacciones</h2>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
+          >
+            {showForm ? <X size={24} /> : <Plus size={24} />}
+            <span className="text-xl">{showForm ? 'Cancelar' : 'Nueva Interacción'}</span>
+          </button>
+        </div>
       </div>
-      <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
+
+      {/* Formulario */}
+      {showForm && (
+        <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
+          <h3 className="text-2xl font-semibold mb-6 text-blue-900">
+            {editingId ? 'Editar Interacción' : 'Nueva Interacción'}
+          </h3>
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Tipo de Interacción *</label>
+                <select
+                  required
+                  value={formData.tipo}
+                  onChange={(e) => setFormData({...formData, tipo: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  {tiposInteraccion.map(tipo => (
+                    <option key={tipo.value} value={tipo.value}>{tipo.icon} {tipo.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Cliente *</label>
+                <select
+                  required
+                  value={formData.clienteId}
+                  onChange={(e) => setFormData({...formData, clienteId: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  <option value="">Seleccionar cliente</option>
+                  {clientes.map(cliente => (
+                    <option key={cliente.id} value={cliente.id}>{cliente.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Usuario Responsable</label>
+                <select
+                  value={formData.usuarioId}
+                  onChange={(e) => setFormData({...formData, usuarioId: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  <option value="">Sin asignar</option>
+                  {usuarios.map(usuario => (
+                    <option key={usuario.id} value={usuario.id}>{usuario.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Fecha *</label>
+                <input
+                  type="date"
+                  required
+                  value={formData.fecha}
+                  onChange={(e) => setFormData({...formData, fecha: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Hora</label>
+                <input
+                  type="time"
+                  value={formData.hora}
+                  onChange={(e) => setFormData({...formData, hora: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Duración (minutos)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.duracion}
+                  onChange={(e) => setFormData({...formData, duracion: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-lg font-medium text-gray-700 mb-2">Notas / Descripción</label>
+                <textarea
+                  value={formData.notas}
+                  onChange={(e) => setFormData({...formData, notas: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  rows="4"
+                  placeholder="Detalles de la interacción..."
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Fecha de Seguimiento</label>
+                <input
+                  type="date"
+                  value={formData.seguimiento}
+                  onChange={(e) => setFormData({...formData, seguimiento: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={formData.completado}
+                  onChange={(e) => setFormData({...formData, completado: e.target.checked})}
+                  className="w-5 h-5"
+                />
+                <label className="text-lg font-medium text-gray-700">Interacción Completada</label>
+              </div>
+            </div>
+            <div className="flex gap-4 mt-8">
+              <button
+                type="submit"
+                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all"
+              >
+                <Save size={24} />
+                <span className="text-xl">{editingId ? 'Actualizar' : 'Guardar'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="flex items-center gap-2 bg-gray-300 text-gray-700 px-8 py-3 rounded-lg font-semibold hover:bg-gray-400 transition-all"
+              >
+                <X size={24} />
+                <span className="text-xl">Cancelar</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Lista de Interacciones */}
+      <div className="bg-white rounded-xl shadow-md p-8 border-l-4 border-orange-500">
         <h3 className="text-2xl font-semibold mb-6 text-blue-900">Historial de Interacciones</h3>
-        <p className="text-gray-600 text-lg">Módulo en desarrollo - FASE 2</p>
+
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-4 border-orange-500"></div>
+            <p className="text-gray-600 mt-4">Cargando interacciones...</p>
+          </div>
+        ) : interacciones.length === 0 ? (
+          <div className="text-center py-12">
+            <Phone className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600 text-lg">No hay interacciones registradas</p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="mt-4 text-blue-600 font-semibold hover:text-blue-700"
+            >
+              Crear primera interacción
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Tipo</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Cliente</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Usuario</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Fecha</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Duración</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Notas</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Estado</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {interacciones.map(interaccion => {
+                  const tipoData = getTipoData(interaccion.tipo);
+                  return (
+                    <tr key={interaccion.id} className="border-b border-gray-200 hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${tipoData.color}`}>
+                          {tipoData.icon} {tipoData.label}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-lg text-gray-900 font-medium">{getClienteNombre(interaccion.clienteId)}</td>
+                      <td className="px-6 py-4 text-lg text-gray-600">{getUsuarioNombre(interaccion.usuarioId)}</td>
+                      <td className="px-6 py-4 text-lg text-gray-600">
+                        {new Date(interaccion.fecha).toLocaleDateString('es-MX')}
+                        {interaccion.hora && ` ${interaccion.hora}`}
+                      </td>
+                      <td className="px-6 py-4 text-lg text-gray-600">
+                        {interaccion.duracion ? `${interaccion.duracion} min` : '-'}
+                      </td>
+                      <td className="px-6 py-4 text-lg text-gray-600">
+                        {interaccion.notas ? (
+                          <div className="max-w-xs truncate">{interaccion.notas}</div>
+                        ) : '-'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                          interaccion.completado
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {interaccion.completado ? 'Completada' : 'Pendiente'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEdit(interaccion)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                          >
+                            <Edit2 size={20} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(interaccion.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
