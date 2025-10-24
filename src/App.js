@@ -1487,14 +1487,387 @@ function InteraccionesModule() {
 
 // Módulo Tareas
 function TareasModule() {
+  const [tareas, setTareas] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [proyectos, setProyectos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({
+    titulo: '',
+    descripcion: '',
+    prioridad: 'media',
+    estado: 'pendiente',
+    usuarioId: '',
+    clienteId: '',
+    proyectoId: '',
+    fechaVencimiento: '',
+  });
+
+  const prioridades = [
+    { value: 'alta', label: 'Alta', color: 'bg-red-100 text-red-800' },
+    { value: 'media', label: 'Media', color: 'bg-yellow-100 text-yellow-800' },
+    { value: 'baja', label: 'Baja', color: 'bg-green-100 text-green-800' }
+  ];
+
+  const estados = [
+    { value: 'pendiente', label: 'Pendiente', color: 'bg-gray-100 text-gray-800' },
+    { value: 'en_progreso', label: 'En Progreso', color: 'bg-blue-100 text-blue-800' },
+    { value: 'completada', label: 'Completada', color: 'bg-green-100 text-green-800' }
+  ];
+
+  // Cargar datos desde Firestore
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+
+      // Cargar tareas
+      const tareasSnapshot = await getDocs(collection(db, 'tareas'));
+      const tareasData = tareasSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setTareas(tareasData.sort((a, b) => new Date(a.fechaVencimiento || '9999-12-31') - new Date(b.fechaVencimiento || '9999-12-31')));
+
+      // Cargar usuarios
+      const usuariosSnapshot = await getDocs(collection(db, 'usuarios'));
+      const usuariosData = usuariosSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setUsuarios(usuariosData);
+
+      // Cargar clientes
+      const clientesSnapshot = await getDocs(collection(db, 'clientes'));
+      const clientesData = clientesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setClientes(clientesData);
+
+      // Cargar proyectos
+      const proyectosSnapshot = await getDocs(collection(db, 'proyectos'));
+      const proyectosData = proyectosSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setProyectos(proyectosData);
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingId) {
+        // Actualizar tarea existente
+        const tareaRef = doc(db, 'tareas', editingId);
+        await updateDoc(tareaRef, formData);
+      } else {
+        // Crear nueva tarea
+        await addDoc(collection(db, 'tareas'), {
+          ...formData,
+          fechaCreacion: new Date().toISOString()
+        });
+      }
+      resetForm();
+      loadData();
+    } catch (error) {
+      console.error('Error guardando tarea:', error);
+    }
+  };
+
+  const handleEdit = (tarea) => {
+    setFormData({
+      titulo: tarea.titulo,
+      descripcion: tarea.descripcion,
+      prioridad: tarea.prioridad,
+      estado: tarea.estado,
+      usuarioId: tarea.usuarioId || '',
+      clienteId: tarea.clienteId || '',
+      proyectoId: tarea.proyectoId || '',
+      fechaVencimiento: tarea.fechaVencimiento || '',
+    });
+    setEditingId(tarea.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('¿Estás seguro de eliminar esta tarea?')) {
+      try {
+        await deleteDoc(doc(db, 'tareas', id));
+        loadData();
+      } catch (error) {
+        console.error('Error eliminando tarea:', error);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      titulo: '',
+      descripcion: '',
+      prioridad: 'media',
+      estado: 'pendiente',
+      usuarioId: '',
+      clienteId: '',
+      proyectoId: '',
+      fechaVencimiento: '',
+    });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  const getUsuarioNombre = (usuarioId) => {
+    const usuario = usuarios.find(u => u.id === usuarioId);
+    return usuario ? usuario.nombre : 'Sin asignar';
+  };
+
+  const getClienteNombre = (clienteId) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    return cliente ? cliente.nombre : '-';
+  };
+
+  const getProyectoNombre = (proyectoId) => {
+    const proyecto = proyectos.find(p => p.id === proyectoId);
+    return proyecto ? proyecto.nombre : '-';
+  };
+
+  const getPrioridadData = (prioridadValue) => {
+    return prioridades.find(p => p.value === prioridadValue) || prioridades[1];
+  };
+
+  const getEstadoData = (estadoValue) => {
+    return estados.find(e => e.value === estadoValue) || estados[0];
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
-        <h2 className="text-4xl font-bold">Tareas</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-4xl font-bold">Tareas</h2>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
+          >
+            {showForm ? <X size={24} /> : <Plus size={24} />}
+            <span className="text-xl">{showForm ? 'Cancelar' : 'Nueva Tarea'}</span>
+          </button>
+        </div>
       </div>
-      <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
-        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Gestión de Tareas</h3>
-        <p className="text-gray-600 text-lg">Módulo en desarrollo - FASE 3</p>
+
+      {/* Formulario */}
+      {showForm && (
+        <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
+          <h3 className="text-2xl font-semibold mb-6 text-blue-900">
+            {editingId ? 'Editar Tarea' : 'Nueva Tarea'}
+          </h3>
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-2 gap-6">
+              <div className="col-span-2">
+                <label className="block text-lg font-medium text-gray-700 mb-2">Título *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.titulo}
+                  onChange={(e) => setFormData({...formData, titulo: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-lg font-medium text-gray-700 mb-2">Descripción</label>
+                <textarea
+                  value={formData.descripcion}
+                  onChange={(e) => setFormData({...formData, descripcion: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  rows="4"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Prioridad *</label>
+                <select
+                  required
+                  value={formData.prioridad}
+                  onChange={(e) => setFormData({...formData, prioridad: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  {prioridades.map(prioridad => (
+                    <option key={prioridad.value} value={prioridad.value}>{prioridad.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Estado *</label>
+                <select
+                  required
+                  value={formData.estado}
+                  onChange={(e) => setFormData({...formData, estado: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  {estados.map(estado => (
+                    <option key={estado.value} value={estado.value}>{estado.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Usuario Asignado</label>
+                <select
+                  value={formData.usuarioId}
+                  onChange={(e) => setFormData({...formData, usuarioId: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  <option value="">Sin asignar</option>
+                  {usuarios.map(usuario => (
+                    <option key={usuario.id} value={usuario.id}>{usuario.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Fecha de Vencimiento</label>
+                <input
+                  type="date"
+                  value={formData.fechaVencimiento}
+                  onChange={(e) => setFormData({...formData, fechaVencimiento: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Cliente Relacionado</label>
+                <select
+                  value={formData.clienteId}
+                  onChange={(e) => setFormData({...formData, clienteId: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  <option value="">Sin cliente</option>
+                  {clientes.map(cliente => (
+                    <option key={cliente.id} value={cliente.id}>{cliente.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Proyecto Relacionado</label>
+                <select
+                  value={formData.proyectoId}
+                  onChange={(e) => setFormData({...formData, proyectoId: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  <option value="">Sin proyecto</option>
+                  {proyectos.map(proyecto => (
+                    <option key={proyecto.id} value={proyecto.id}>{proyecto.nombre}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-4 mt-8">
+              <button
+                type="submit"
+                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all"
+              >
+                <Save size={24} />
+                <span className="text-xl">{editingId ? 'Actualizar' : 'Guardar'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="flex items-center gap-2 bg-gray-300 text-gray-700 px-8 py-3 rounded-lg font-semibold hover:bg-gray-400 transition-all"
+              >
+                <X size={24} />
+                <span className="text-xl">Cancelar</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Lista de Tareas */}
+      <div className="bg-white rounded-xl shadow-md p-8 border-l-4 border-orange-500">
+        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Lista de Tareas</h3>
+
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-4 border-orange-500"></div>
+            <p className="text-gray-600 mt-4">Cargando tareas...</p>
+          </div>
+        ) : tareas.length === 0 ? (
+          <div className="text-center py-12">
+            <ClipboardList className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600 text-lg">No hay tareas registradas</p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="mt-4 text-blue-600 font-semibold hover:text-blue-700"
+            >
+              Crear primera tarea
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Título</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Usuario</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Prioridad</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Estado</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Vencimiento</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Cliente</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Proyecto</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tareas.map(tarea => {
+                  const prioridadData = getPrioridadData(tarea.prioridad);
+                  const estadoData = getEstadoData(tarea.estado);
+                  return (
+                    <tr key={tarea.id} className="border-b border-gray-200 hover:bg-gray-50">
+                      <td className="px-6 py-4 text-lg text-gray-900 font-medium">{tarea.titulo}</td>
+                      <td className="px-6 py-4 text-lg text-gray-600">{getUsuarioNombre(tarea.usuarioId)}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${prioridadData.color}`}>
+                          {prioridadData.label}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${estadoData.color}`}>
+                          {estadoData.label}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-lg text-gray-600">
+                        {tarea.fechaVencimiento ? new Date(tarea.fechaVencimiento).toLocaleDateString('es-MX') : '-'}
+                      </td>
+                      <td className="px-6 py-4 text-lg text-gray-600">{getClienteNombre(tarea.clienteId)}</td>
+                      <td className="px-6 py-4 text-lg text-gray-600">{getProyectoNombre(tarea.proyectoId)}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEdit(tarea)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                          >
+                            <Edit2 size={20} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(tarea.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
