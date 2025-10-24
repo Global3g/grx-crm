@@ -3251,14 +3251,532 @@ function NotificacionesModule() {
 
 // Módulo Integraciones
 function IntegracionesModule() {
+  const [activeTab, setActiveTab] = useState('apikeys');
+  const [apiKeys, setApiKeys] = useState([]);
+  const [webhooks, setWebhooks] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showKeyForm, setShowKeyForm] = useState(false);
+  const [showWebhookForm, setShowWebhookForm] = useState(false);
+  const [formData, setFormData] = useState({
+    nombre: '',
+    descripcion: '',
+    url: '',
+    eventos: []
+  });
+
+  const eventosDisponibles = [
+    'cliente.creado', 'cliente.actualizado', 'cliente.eliminado',
+    'oportunidad.creada', 'oportunidad.actualizada', 'oportunidad.cerrada',
+    'tarea.creada', 'tarea.completada', 'tarea.vencida',
+    'proyecto.creado', 'proyecto.actualizado', 'proyecto.completado'
+  ];
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [keysSnap, webhooksSnap] = await Promise.all([
+        getDocs(collection(db, 'api_keys')),
+        getDocs(collection(db, 'webhooks'))
+      ]);
+
+      setApiKeys(keysSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setWebhooks(webhooksSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      // Generar logs simulados
+      const simulatedLogs = [
+        { id: '1', timestamp: new Date(), method: 'GET', endpoint: '/api/clientes', status: 200, duration: '45ms' },
+        { id: '2', timestamp: new Date(Date.now() - 300000), method: 'POST', endpoint: '/api/oportunidades', status: 201, duration: '89ms' },
+        { id: '3', timestamp: new Date(Date.now() - 600000), method: 'PUT', endpoint: '/api/tareas/123', status: 200, duration: '67ms' },
+        { id: '4', timestamp: new Date(Date.now() - 900000), method: 'DELETE', endpoint: '/api/proyectos/456', status: 204, duration: '34ms' },
+        { id: '5', timestamp: new Date(Date.now() - 1200000), method: 'GET', endpoint: '/api/reportes', status: 200, duration: '156ms' }
+      ];
+      setLogs(simulatedLogs);
+    } catch (error) {
+      console.error("Error loading data:", error);
+    }
+    setLoading(false);
+  };
+
+  const generateApiKey = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let key = '';
+    for (let i = 0; i < 32; i++) {
+      key += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return key;
+  };
+
+  const handleCreateApiKey = async (e) => {
+    e.preventDefault();
+    try {
+      const newKey = {
+        nombre: formData.nombre,
+        descripcion: formData.descripcion,
+        key: generateApiKey(),
+        createdAt: new Date().toISOString(),
+        activa: true,
+        ultimoUso: null
+      };
+
+      await addDoc(collection(db, 'api_keys'), newKey);
+      setFormData({ nombre: '', descripcion: '', url: '', eventos: [] });
+      setShowKeyForm(false);
+      loadData();
+    } catch (error) {
+      console.error("Error creating API key:", error);
+    }
+  };
+
+  const handleCreateWebhook = async (e) => {
+    e.preventDefault();
+    try {
+      const newWebhook = {
+        nombre: formData.nombre,
+        url: formData.url,
+        eventos: formData.eventos,
+        activo: true,
+        createdAt: new Date().toISOString()
+      };
+
+      await addDoc(collection(db, 'webhooks'), newWebhook);
+      setFormData({ nombre: '', descripcion: '', url: '', eventos: [] });
+      setShowWebhookForm(false);
+      loadData();
+    } catch (error) {
+      console.error("Error creating webhook:", error);
+    }
+  };
+
+  const handleDeleteApiKey = async (id) => {
+    if (window.confirm('¿Eliminar esta API key? Esta acción no se puede deshacer.')) {
+      try {
+        await deleteDoc(doc(db, 'api_keys', id));
+        loadData();
+      } catch (error) {
+        console.error("Error deleting API key:", error);
+      }
+    }
+  };
+
+  const handleDeleteWebhook = async (id) => {
+    if (window.confirm('¿Eliminar este webhook?')) {
+      try {
+        await deleteDoc(doc(db, 'webhooks', id));
+        loadData();
+      } catch (error) {
+        console.error("Error deleting webhook:", error);
+      }
+    }
+  };
+
+  const handleToggleApiKey = async (key) => {
+    try {
+      await updateDoc(doc(db, 'api_keys', key.id), { activa: !key.activa });
+      loadData();
+    } catch (error) {
+      console.error("Error toggling API key:", error);
+    }
+  };
+
+  const handleToggleWebhook = async (webhook) => {
+    try {
+      await updateDoc(doc(db, 'webhooks', webhook.id), { activo: !webhook.activo });
+      loadData();
+    } catch (error) {
+      console.error("Error toggling webhook:", error);
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    alert('Copiado al portapapeles');
+  };
+
+  const getStatusColor = (status) => {
+    if (status >= 200 && status < 300) return 'text-green-600 bg-green-50';
+    if (status >= 400) return 'text-red-600 bg-red-50';
+    return 'text-gray-600 bg-gray-50';
+  };
+
+  const getMethodColor = (method) => {
+    switch (method) {
+      case 'GET': return 'bg-blue-100 text-blue-800';
+      case 'POST': return 'bg-green-100 text-green-800';
+      case 'PUT': return 'bg-yellow-100 text-yellow-800';
+      case 'DELETE': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
-        <h2 className="text-4xl font-bold">Integraciones</h2>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-4xl font-bold">Integraciones y API</h2>
+            <p className="text-blue-100 mt-2">Gestión de API Keys, Webhooks y monitoreo de actividad</p>
+          </div>
+          <div className="bg-white bg-opacity-20 rounded-full p-4">
+            <Plug className="w-12 h-12" />
+          </div>
+        </div>
       </div>
-      <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
-        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Integraciones y API</h3>
-        <p className="text-gray-600 text-lg">Módulo en desarrollo - FASE 7</p>
+
+      {/* Tabs */}
+      <div className="bg-white rounded-xl shadow-md mb-8 border-l-4 border-orange-500">
+        <div className="flex border-b">
+          <button
+            onClick={() => setActiveTab('apikeys')}
+            className={`flex-1 px-6 py-4 font-medium transition-all ${
+              activeTab === 'apikeys'
+                ? 'bg-orange-500 text-white'
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            🔑 API Keys
+          </button>
+          <button
+            onClick={() => setActiveTab('webhooks')}
+            className={`flex-1 px-6 py-4 font-medium transition-all ${
+              activeTab === 'webhooks'
+                ? 'bg-orange-500 text-white'
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            🔗 Webhooks
+          </button>
+          <button
+            onClick={() => setActiveTab('logs')}
+            className={`flex-1 px-6 py-4 font-medium transition-all ${
+              activeTab === 'logs'
+                ? 'bg-orange-500 text-white'
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            📊 Logs de API
+          </button>
+          <button
+            onClick={() => setActiveTab('docs')}
+            className={`flex-1 px-6 py-4 font-medium transition-all ${
+              activeTab === 'docs'
+                ? 'bg-orange-500 text-white'
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            📚 Documentación
+          </button>
+        </div>
+
+        <div className="p-8">
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+              <p className="mt-4 text-gray-600">Cargando...</p>
+            </div>
+          ) : (
+            <>
+              {/* API Keys Tab */}
+              {activeTab === 'apikeys' && (
+                <div>
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-2xl font-semibold text-blue-900">API Keys</h3>
+                    <button
+                      onClick={() => setShowKeyForm(!showKeyForm)}
+                      className="bg-orange-500 text-white px-6 py-3 rounded-lg hover:bg-orange-600 transition-all shadow-md"
+                    >
+                      + Nueva API Key
+                    </button>
+                  </div>
+
+                  {showKeyForm && (
+                    <form onSubmit={handleCreateApiKey} className="bg-gray-50 p-6 rounded-lg mb-6">
+                      <div className="grid grid-cols-1 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Nombre *</label>
+                          <input
+                            type="text"
+                            required
+                            value={formData.nombre}
+                            onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                            placeholder="Ej: Integración con sistema externo"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Descripción</label>
+                          <textarea
+                            value={formData.descripcion}
+                            onChange={(e) => setFormData({...formData, descripcion: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                            rows="3"
+                            placeholder="Descripción del uso de esta API key..."
+                          />
+                        </div>
+                        <div className="flex gap-3">
+                          <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                            Generar API Key
+                          </button>
+                          <button type="button" onClick={() => setShowKeyForm(false)} className="bg-gray-300 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-400">
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  )}
+
+                  {apiKeys.length === 0 ? (
+                    <div className="text-center py-12 bg-gray-50 rounded-lg">
+                      <p className="text-gray-600">No hay API keys registradas</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {apiKeys.map(key => (
+                        <div key={key.id} className="border border-gray-200 rounded-lg p-5 bg-white hover:shadow-md transition-all">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <h4 className="font-semibold text-lg text-gray-900">{key.nombre}</h4>
+                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${key.activa ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                                  {key.activa ? '✓ Activa' : '○ Inactiva'}
+                                </span>
+                              </div>
+                              {key.descripcion && <p className="text-gray-600 mb-3">{key.descripcion}</p>}
+                              <div className="bg-gray-100 p-3 rounded font-mono text-sm flex items-center justify-between">
+                                <code className="text-gray-800">{key.key}</code>
+                                <button onClick={() => copyToClipboard(key.key)} className="ml-3 text-blue-600 hover:text-blue-800">
+                                  📋 Copiar
+                                </button>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-2">
+                                Creada: {new Date(key.createdAt).toLocaleString('es-MX')}
+                              </p>
+                            </div>
+                            <div className="flex gap-2 ml-4">
+                              <button onClick={() => handleToggleApiKey(key)} className="text-blue-600 hover:text-blue-800 px-3 py-1">
+                                {key.activa ? 'Desactivar' : 'Activar'}
+                              </button>
+                              <button onClick={() => handleDeleteApiKey(key.id)} className="text-red-600 hover:text-red-800 px-3 py-1">
+                                Eliminar
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Webhooks Tab */}
+              {activeTab === 'webhooks' && (
+                <div>
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-2xl font-semibold text-blue-900">Webhooks</h3>
+                    <button
+                      onClick={() => setShowWebhookForm(!showWebhookForm)}
+                      className="bg-orange-500 text-white px-6 py-3 rounded-lg hover:bg-orange-600 transition-all shadow-md"
+                    >
+                      + Nuevo Webhook
+                    </button>
+                  </div>
+
+                  {showWebhookForm && (
+                    <form onSubmit={handleCreateWebhook} className="bg-gray-50 p-6 rounded-lg mb-6">
+                      <div className="grid grid-cols-1 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Nombre *</label>
+                          <input
+                            type="text"
+                            required
+                            value={formData.nombre}
+                            onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">URL del Webhook *</label>
+                          <input
+                            type="url"
+                            required
+                            value={formData.url}
+                            onChange={(e) => setFormData({...formData, url: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                            placeholder="https://ejemplo.com/webhook"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Eventos *</label>
+                          <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-3">
+                            {eventosDisponibles.map(evento => (
+                              <label key={evento} className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={formData.eventos.includes(evento)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setFormData({...formData, eventos: [...formData.eventos, evento]});
+                                    } else {
+                                      setFormData({...formData, eventos: formData.eventos.filter(ev => ev !== evento)});
+                                    }
+                                  }}
+                                  className="rounded text-orange-500 focus:ring-orange-500"
+                                />
+                                <span className="text-sm text-gray-700">{evento}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex gap-3">
+                          <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                            Crear Webhook
+                          </button>
+                          <button type="button" onClick={() => setShowWebhookForm(false)} className="bg-gray-300 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-400">
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  )}
+
+                  {webhooks.length === 0 ? (
+                    <div className="text-center py-12 bg-gray-50 rounded-lg">
+                      <p className="text-gray-600">No hay webhooks registrados</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {webhooks.map(webhook => (
+                        <div key={webhook.id} className="border border-gray-200 rounded-lg p-5 bg-white hover:shadow-md transition-all">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <h4 className="font-semibold text-lg text-gray-900">{webhook.nombre}</h4>
+                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${webhook.activo ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                                  {webhook.activo ? '✓ Activo' : '○ Inactivo'}
+                                </span>
+                              </div>
+                              <p className="text-blue-600 mb-3 font-mono text-sm">{webhook.url}</p>
+                              <div className="flex flex-wrap gap-2">
+                                {webhook.eventos.map(evento => (
+                                  <span key={evento} className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded">
+                                    {evento}
+                                  </span>
+                                ))}
+                              </div>
+                              <p className="text-xs text-gray-500 mt-3">
+                                Creado: {new Date(webhook.createdAt).toLocaleString('es-MX')}
+                              </p>
+                            </div>
+                            <div className="flex gap-2 ml-4">
+                              <button onClick={() => handleToggleWebhook(webhook)} className="text-blue-600 hover:text-blue-800 px-3 py-1">
+                                {webhook.activo ? 'Desactivar' : 'Activar'}
+                              </button>
+                              <button onClick={() => handleDeleteWebhook(webhook.id)} className="text-red-600 hover:text-red-800 px-3 py-1">
+                                Eliminar
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Logs Tab */}
+              {activeTab === 'logs' && (
+                <div>
+                  <h3 className="text-2xl font-semibold text-blue-900 mb-6">Logs de Actividad API</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Método</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Endpoint</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duración</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {logs.map(log => (
+                          <tr key={log.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 text-sm text-gray-900">{log.timestamp.toLocaleString('es-MX')}</td>
+                            <td className="px-6 py-4">
+                              <span className={`px-2 py-1 text-xs font-semibold rounded ${getMethodColor(log.method)}`}>
+                                {log.method}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-sm font-mono text-gray-900">{log.endpoint}</td>
+                            <td className="px-6 py-4">
+                              <span className={`px-2 py-1 text-xs font-semibold rounded ${getStatusColor(log.status)}`}>
+                                {log.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-600">{log.duration}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Docs Tab */}
+              {activeTab === 'docs' && (
+                <div>
+                  <h3 className="text-2xl font-semibold text-blue-900 mb-6">Documentación de API</h3>
+                  <div className="space-y-6">
+                    <div className="bg-blue-50 border-l-4 border-blue-500 p-6 rounded-lg">
+                      <h4 className="font-semibold text-blue-900 mb-2">Base URL</h4>
+                      <code className="bg-white px-3 py-2 rounded text-sm">https://api.grx-crm.com/v1</code>
+                    </div>
+
+                    <div className="bg-white border border-gray-200 rounded-lg p-6">
+                      <h4 className="font-semibold text-gray-900 mb-4">Endpoints Disponibles</h4>
+                      <div className="space-y-3">
+                        <div className="border-l-4 border-green-500 pl-4">
+                          <p className="font-mono text-sm"><span className="text-green-600 font-bold">GET</span> /clientes</p>
+                          <p className="text-gray-600 text-sm">Obtener lista de clientes</p>
+                        </div>
+                        <div className="border-l-4 border-blue-500 pl-4">
+                          <p className="font-mono text-sm"><span className="text-blue-600 font-bold">POST</span> /clientes</p>
+                          <p className="text-gray-600 text-sm">Crear nuevo cliente</p>
+                        </div>
+                        <div className="border-l-4 border-green-500 pl-4">
+                          <p className="font-mono text-sm"><span className="text-green-600 font-bold">GET</span> /oportunidades</p>
+                          <p className="text-gray-600 text-sm">Obtener lista de oportunidades</p>
+                        </div>
+                        <div className="border-l-4 border-blue-500 pl-4">
+                          <p className="font-mono text-sm"><span className="text-blue-600 font-bold">POST</span> /oportunidades</p>
+                          <p className="text-gray-600 text-sm">Crear nueva oportunidad</p>
+                        </div>
+                        <div className="border-l-4 border-green-500 pl-4">
+                          <p className="font-mono text-sm"><span className="text-green-600 font-bold">GET</span> /tareas</p>
+                          <p className="text-gray-600 text-sm">Obtener lista de tareas</p>
+                        </div>
+                        <div className="border-l-4 border-green-500 pl-4">
+                          <p className="font-mono text-sm"><span className="text-green-600 font-bold">GET</span> /proyectos</p>
+                          <p className="text-gray-600 text-sm">Obtener lista de proyectos</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-yellow-50 border-l-4 border-yellow-500 p-6 rounded-lg">
+                      <h4 className="font-semibold text-yellow-900 mb-2">Autenticación</h4>
+                      <p className="text-yellow-800 mb-3">Todas las peticiones requieren un API Key en el header:</p>
+                      <code className="bg-white px-3 py-2 rounded text-sm block">Authorization: Bearer YOUR_API_KEY</code>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
