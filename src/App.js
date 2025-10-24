@@ -2930,15 +2930,321 @@ function ReportesModule() {
 
 // Módulo Notificaciones
 function NotificacionesModule() {
+  const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState([]);
+  const [filter, setFilter] = useState('all');
+
+  useEffect(() => {
+    loadNotifications();
+  }, []);
+
+  const loadNotifications = async () => {
+    setLoading(true);
+    try {
+      const [tareasSnap, interaccionesSnap, oportunidadesSnap, clientesSnap, proyectosSnap] = await Promise.all([
+        getDocs(collection(db, 'tareas')),
+        getDocs(collection(db, 'interacciones')),
+        getDocs(collection(db, 'oportunidades')),
+        getDocs(collection(db, 'clientes')),
+        getDocs(collection(db, 'proyectos'))
+      ]);
+
+      const tareas = tareasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const interacciones = interaccionesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const oportunidades = oportunidadesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const clientes = clientesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const proyectos = proyectosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      const generatedNotifications = [];
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Notificaciones de tareas vencidas
+      tareas.forEach(tarea => {
+        if (tarea.estado !== 'Completada' && tarea.fechaLimite) {
+          const dueDate = new Date(tarea.fechaLimite);
+          dueDate.setHours(0, 0, 0, 0);
+          const diffDays = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+
+          if (diffDays < 0) {
+            generatedNotifications.push({
+              id: `tarea-vencida-${tarea.id}`,
+              type: 'error',
+              category: 'tareas',
+              title: '⚠️ Tarea Vencida',
+              message: `"${tarea.titulo}" venció hace ${Math.abs(diffDays)} día(s)`,
+              priority: tarea.prioridad,
+              timestamp: new Date(),
+              read: false
+            });
+          } else if (diffDays <= 3) {
+            generatedNotifications.push({
+              id: `tarea-proxima-${tarea.id}`,
+              type: 'warning',
+              category: 'tareas',
+              title: '⏰ Tarea Próxima a Vencer',
+              message: `"${tarea.titulo}" vence en ${diffDays} día(s)`,
+              priority: tarea.prioridad,
+              timestamp: new Date(),
+              read: false
+            });
+          }
+        }
+      });
+
+      // Notificaciones de interacciones de seguimiento pendientes
+      interacciones.forEach(interaccion => {
+        if (interaccion.seguimiento && !interaccion.completado) {
+          const cliente = clientes.find(c => c.id === interaccion.clienteId);
+          generatedNotifications.push({
+            id: `seguimiento-${interaccion.id}`,
+            type: 'info',
+            category: 'interacciones',
+            title: '📋 Seguimiento Pendiente',
+            message: `Seguimiento pendiente con ${cliente?.nombre || 'Cliente'} - ${interaccion.tipo}`,
+            timestamp: new Date(interaccion.fecha || Date.now()),
+            read: false
+          });
+        }
+      });
+
+      // Notificaciones de oportunidades sin actividad reciente
+      oportunidades.forEach(oportunidad => {
+        if (oportunidad.etapa !== 'Cerrado Ganado' && oportunidad.etapa !== 'Cerrado Perdido') {
+          const createdDate = new Date(oportunidad.fechaCreacion);
+          const daysSinceCreation = Math.floor((today - createdDate) / (1000 * 60 * 60 * 24));
+
+          if (daysSinceCreation > 30) {
+            generatedNotifications.push({
+              id: `oportunidad-inactiva-${oportunidad.id}`,
+              type: 'warning',
+              category: 'oportunidades',
+              title: '💼 Oportunidad Requiere Atención',
+              message: `"${oportunidad.nombre}" sin actividad por ${daysSinceCreation} días`,
+              timestamp: new Date(),
+              read: false
+            });
+          }
+        }
+      });
+
+      // Notificaciones de proyectos con bajo progreso
+      proyectos.forEach(proyecto => {
+        if (proyecto.estado === 'En Curso' && proyecto.fechaFin) {
+          const endDate = new Date(proyecto.fechaFin);
+          const totalDuration = endDate - new Date(proyecto.fechaInicio);
+          const elapsed = today - new Date(proyecto.fechaInicio);
+          const expectedProgress = Math.min(100, (elapsed / totalDuration) * 100);
+          const actualProgress = proyecto.progreso || 0;
+
+          if (actualProgress < expectedProgress - 20) {
+            generatedNotifications.push({
+              id: `proyecto-atrasado-${proyecto.id}`,
+              type: 'warning',
+              category: 'proyectos',
+              title: '🚧 Proyecto Atrasado',
+              message: `"${proyecto.nombre}" - Progreso: ${actualProgress}%, Esperado: ${Math.round(expectedProgress)}%`,
+              timestamp: new Date(),
+              read: false
+            });
+          }
+        }
+      });
+
+      // Ordenar por timestamp (más recientes primero)
+      generatedNotifications.sort((a, b) => b.timestamp - a.timestamp);
+      setNotifications(generatedNotifications);
+    } catch (error) {
+      console.error("Error loading notifications:", error);
+    }
+    setLoading(false);
+  };
+
+  const getNotificationIcon = (type) => {
+    switch (type) {
+      case 'error': return '🔴';
+      case 'warning': return '⚠️';
+      case 'info': return 'ℹ️';
+      case 'success': return '✅';
+      default: return '📢';
+    }
+  };
+
+  const getNotificationColor = (type) => {
+    switch (type) {
+      case 'error': return 'border-red-500 bg-red-50';
+      case 'warning': return 'border-yellow-500 bg-yellow-50';
+      case 'info': return 'border-blue-500 bg-blue-50';
+      case 'success': return 'border-green-500 bg-green-50';
+      default: return 'border-gray-500 bg-gray-50';
+    }
+  };
+
+  const filteredNotifications = filter === 'all'
+    ? notifications
+    : notifications.filter(n => n.category === filter);
+
+  const categoryCounts = {
+    all: notifications.length,
+    tareas: notifications.filter(n => n.category === 'tareas').length,
+    interacciones: notifications.filter(n => n.category === 'interacciones').length,
+    oportunidades: notifications.filter(n => n.category === 'oportunidades').length,
+    proyectos: notifications.filter(n => n.category === 'proyectos').length
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
-        <h2 className="text-4xl font-bold">Notificaciones</h2>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-4xl font-bold">Centro de Notificaciones</h2>
+            <p className="text-blue-100 mt-2">Alertas y recordatorios automáticos del sistema</p>
+          </div>
+          <div className="bg-white bg-opacity-20 rounded-full p-4">
+            <Bell className="w-12 h-12" />
+          </div>
+        </div>
       </div>
-      <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
-        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Centro de Notificaciones</h3>
-        <p className="text-gray-600 text-lg">Módulo en desarrollo - FASE 6</p>
+
+      {/* Filtros */}
+      <div className="bg-white rounded-xl shadow-md p-6 mb-8 border-l-4 border-orange-500">
+        <h3 className="text-xl font-semibold text-blue-900 mb-4">Filtrar Notificaciones</h3>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => setFilter('all')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              filter === 'all'
+                ? 'bg-orange-500 text-white shadow-md'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Todas ({categoryCounts.all})
+          </button>
+          <button
+            onClick={() => setFilter('tareas')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              filter === 'tareas'
+                ? 'bg-orange-500 text-white shadow-md'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Tareas ({categoryCounts.tareas})
+          </button>
+          <button
+            onClick={() => setFilter('interacciones')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              filter === 'interacciones'
+                ? 'bg-orange-500 text-white shadow-md'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Interacciones ({categoryCounts.interacciones})
+          </button>
+          <button
+            onClick={() => setFilter('oportunidades')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              filter === 'oportunidades'
+                ? 'bg-orange-500 text-white shadow-md'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Oportunidades ({categoryCounts.oportunidades})
+          </button>
+          <button
+            onClick={() => setFilter('proyectos')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              filter === 'proyectos'
+                ? 'bg-orange-500 text-white shadow-md'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Proyectos ({categoryCounts.proyectos})
+          </button>
+        </div>
       </div>
+
+      {/* Lista de notificaciones */}
+      <div className="bg-white rounded-xl shadow-md p-8 border-l-4 border-orange-500">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-2xl font-semibold text-blue-900">
+            {filter === 'all' ? 'Todas las Notificaciones' : `Notificaciones de ${filter.charAt(0).toUpperCase() + filter.slice(1)}`}
+          </h3>
+          <button
+            onClick={loadNotifications}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-all"
+          >
+            🔄 Actualizar
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-12">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+            <p className="mt-4 text-gray-600">Cargando notificaciones...</p>
+          </div>
+        ) : filteredNotifications.length === 0 ? (
+          <div className="text-center py-12 bg-gray-50 rounded-lg">
+            <Bell className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600 text-lg">No hay notificaciones</p>
+            <p className="text-gray-500 mt-2">¡Todo está bajo control!</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredNotifications.map((notification) => (
+              <div
+                key={notification.id}
+                className={`border-l-4 p-5 rounded-lg transition-all hover:shadow-md ${getNotificationColor(notification.type)}`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="text-2xl">{getNotificationIcon(notification.type)}</span>
+                      <h4 className="font-semibold text-gray-900 text-lg">{notification.title}</h4>
+                      {notification.priority && (
+                        <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                          notification.priority === 'Alta' ? 'bg-red-100 text-red-800' :
+                          notification.priority === 'Media' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-green-100 text-green-800'
+                        }`}>
+                          {notification.priority}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-gray-700 ml-11">{notification.message}</p>
+                    <p className="text-sm text-gray-500 mt-2 ml-11">
+                      {notification.timestamp.toLocaleString('es-MX')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Resumen */}
+      {!loading && notifications.length > 0 && (
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg">
+            <h4 className="font-semibold text-red-900 mb-2">🔴 Críticas</h4>
+            <p className="text-3xl font-bold text-red-600">
+              {notifications.filter(n => n.type === 'error').length}
+            </p>
+          </div>
+          <div className="bg-yellow-50 border-l-4 border-yellow-500 p-6 rounded-lg">
+            <h4 className="font-semibold text-yellow-900 mb-2">⚠️ Advertencias</h4>
+            <p className="text-3xl font-bold text-yellow-600">
+              {notifications.filter(n => n.type === 'warning').length}
+            </p>
+          </div>
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-6 rounded-lg">
+            <h4 className="font-semibold text-blue-900 mb-2">ℹ️ Informativas</h4>
+            <p className="text-3xl font-bold text-blue-600">
+              {notifications.filter(n => n.type === 'info').length}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
