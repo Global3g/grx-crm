@@ -1875,14 +1875,381 @@ function TareasModule() {
 
 // Módulo Proyectos
 function ProyectosModule() {
+  const [proyectos, setProyectos] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [empresas, setEmpresas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({
+    nombre: '',
+    descripcion: '',
+    clienteId: '',
+    empresaId: '',
+    fechaInicio: '',
+    fechaFin: '',
+    presupuesto: '',
+    estado: 'planificacion',
+    progreso: 0
+  });
+
+  const estados = [
+    { value: 'planificacion', label: 'Planificación', color: 'bg-gray-100 text-gray-800' },
+    { value: 'en_curso', label: 'En Curso', color: 'bg-blue-100 text-blue-800' },
+    { value: 'pausado', label: 'Pausado', color: 'bg-yellow-100 text-yellow-800' },
+    { value: 'completado', label: 'Completado', color: 'bg-green-100 text-green-800' },
+    { value: 'cancelado', label: 'Cancelado', color: 'bg-red-100 text-red-800' }
+  ];
+
+  // Cargar datos desde Firestore
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+
+      // Cargar proyectos
+      const proyectosSnapshot = await getDocs(collection(db, 'proyectos'));
+      const proyectosData = proyectosSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setProyectos(proyectosData.sort((a, b) => new Date(b.fechaInicio || '1970-01-01') - new Date(a.fechaInicio || '1970-01-01')));
+
+      // Cargar clientes
+      const clientesSnapshot = await getDocs(collection(db, 'clientes'));
+      const clientesData = clientesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setClientes(clientesData);
+
+      // Cargar empresas
+      const empresasSnapshot = await getDocs(collection(db, 'empresas'));
+      const empresasData = empresasSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setEmpresas(empresasData);
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingId) {
+        // Actualizar proyecto existente
+        const proyectoRef = doc(db, 'proyectos', editingId);
+        await updateDoc(proyectoRef, formData);
+      } else {
+        // Crear nuevo proyecto
+        await addDoc(collection(db, 'proyectos'), {
+          ...formData,
+          fechaCreacion: new Date().toISOString()
+        });
+      }
+      resetForm();
+      loadData();
+    } catch (error) {
+      console.error('Error guardando proyecto:', error);
+    }
+  };
+
+  const handleEdit = (proyecto) => {
+    setFormData({
+      nombre: proyecto.nombre,
+      descripcion: proyecto.descripcion,
+      clienteId: proyecto.clienteId || '',
+      empresaId: proyecto.empresaId || '',
+      fechaInicio: proyecto.fechaInicio || '',
+      fechaFin: proyecto.fechaFin || '',
+      presupuesto: proyecto.presupuesto || '',
+      estado: proyecto.estado,
+      progreso: proyecto.progreso || 0
+    });
+    setEditingId(proyecto.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('¿Estás seguro de eliminar este proyecto?')) {
+      try {
+        await deleteDoc(doc(db, 'proyectos', id));
+        loadData();
+      } catch (error) {
+        console.error('Error eliminando proyecto:', error);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      nombre: '',
+      descripcion: '',
+      clienteId: '',
+      empresaId: '',
+      fechaInicio: '',
+      fechaFin: '',
+      presupuesto: '',
+      estado: 'planificacion',
+      progreso: 0
+    });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  const getClienteNombre = (clienteId) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    return cliente ? cliente.nombre : 'Sin cliente';
+  };
+
+  const getEmpresaNombre = (empresaId) => {
+    const empresa = empresas.find(e => e.id === empresaId);
+    return empresa ? empresa.nombre : 'Sin empresa';
+  };
+
+  const getEstadoData = (estadoValue) => {
+    return estados.find(e => e.value === estadoValue) || estados[0];
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
-        <h2 className="text-4xl font-bold">Proyectos</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-4xl font-bold">Proyectos</h2>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
+          >
+            {showForm ? <X size={24} /> : <Plus size={24} />}
+            <span className="text-xl">{showForm ? 'Cancelar' : 'Nuevo Proyecto'}</span>
+          </button>
+        </div>
       </div>
-      <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
-        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Gestión de Proyectos</h3>
-        <p className="text-gray-600 text-lg">Módulo en desarrollo - FASE 3</p>
+
+      {/* Formulario */}
+      {showForm && (
+        <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
+          <h3 className="text-2xl font-semibold mb-6 text-blue-900">
+            {editingId ? 'Editar Proyecto' : 'Nuevo Proyecto'}
+          </h3>
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-2 gap-6">
+              <div className="col-span-2">
+                <label className="block text-lg font-medium text-gray-700 mb-2">Nombre del Proyecto *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.nombre}
+                  onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-lg font-medium text-gray-700 mb-2">Descripción</label>
+                <textarea
+                  value={formData.descripcion}
+                  onChange={(e) => setFormData({...formData, descripcion: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  rows="4"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Cliente</label>
+                <select
+                  value={formData.clienteId}
+                  onChange={(e) => setFormData({...formData, clienteId: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  <option value="">Sin cliente</option>
+                  {clientes.map(cliente => (
+                    <option key={cliente.id} value={cliente.id}>{cliente.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Empresa</label>
+                <select
+                  value={formData.empresaId}
+                  onChange={(e) => setFormData({...formData, empresaId: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  <option value="">Sin empresa</option>
+                  {empresas.map(empresa => (
+                    <option key={empresa.id} value={empresa.id}>{empresa.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Fecha de Inicio</label>
+                <input
+                  type="date"
+                  value={formData.fechaInicio}
+                  onChange={(e) => setFormData({...formData, fechaInicio: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Fecha de Fin</label>
+                <input
+                  type="date"
+                  value={formData.fechaFin}
+                  onChange={(e) => setFormData({...formData, fechaFin: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Presupuesto</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.presupuesto}
+                  onChange={(e) => setFormData({...formData, presupuesto: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Estado *</label>
+                <select
+                  required
+                  value={formData.estado}
+                  onChange={(e) => setFormData({...formData, estado: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  {estados.map(estado => (
+                    <option key={estado.value} value={estado.value}>{estado.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-lg font-medium text-gray-700 mb-2">Progreso (%): {formData.progreso}%</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={formData.progreso}
+                  onChange={(e) => setFormData({...formData, progreso: parseInt(e.target.value)})}
+                  className="w-full"
+                />
+              </div>
+            </div>
+            <div className="flex gap-4 mt-8">
+              <button
+                type="submit"
+                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all"
+              >
+                <Save size={24} />
+                <span className="text-xl">{editingId ? 'Actualizar' : 'Guardar'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="flex items-center gap-2 bg-gray-300 text-gray-700 px-8 py-3 rounded-lg font-semibold hover:bg-gray-400 transition-all"
+              >
+                <X size={24} />
+                <span className="text-xl">Cancelar</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Lista de Proyectos */}
+      <div className="bg-white rounded-xl shadow-md p-8 border-l-4 border-orange-500">
+        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Lista de Proyectos</h3>
+
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-4 border-orange-500"></div>
+            <p className="text-gray-600 mt-4">Cargando proyectos...</p>
+          </div>
+        ) : proyectos.length === 0 ? (
+          <div className="text-center py-12">
+            <Briefcase className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600 text-lg">No hay proyectos registrados</p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="mt-4 text-blue-600 font-semibold hover:text-blue-700"
+            >
+              Crear primer proyecto
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Nombre</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Cliente</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Empresa</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Inicio</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Fin</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Estado</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Progreso</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {proyectos.map(proyecto => {
+                  const estadoData = getEstadoData(proyecto.estado);
+                  return (
+                    <tr key={proyecto.id} className="border-b border-gray-200 hover:bg-gray-50">
+                      <td className="px-6 py-4 text-lg text-gray-900 font-medium">{proyecto.nombre}</td>
+                      <td className="px-6 py-4 text-lg text-gray-600">{getClienteNombre(proyecto.clienteId)}</td>
+                      <td className="px-6 py-4 text-lg text-gray-600">{getEmpresaNombre(proyecto.empresaId)}</td>
+                      <td className="px-6 py-4 text-lg text-gray-600">
+                        {proyecto.fechaInicio ? new Date(proyecto.fechaInicio).toLocaleDateString('es-MX') : '-'}
+                      </td>
+                      <td className="px-6 py-4 text-lg text-gray-600">
+                        {proyecto.fechaFin ? new Date(proyecto.fechaFin).toLocaleDateString('es-MX') : '-'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${estadoData.color}`}>
+                          {estadoData.label}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-24 bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full"
+                              style={{ width: `${proyecto.progreso || 0}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-sm text-gray-600">{proyecto.progreso || 0}%</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEdit(proyecto)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                          >
+                            <Edit2 size={20} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(proyecto.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
