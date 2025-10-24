@@ -2257,14 +2257,388 @@ function ProyectosModule() {
 
 // Módulo Oportunidades
 function OportunidadesModule() {
+  const [oportunidades, setOportunidades] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [empresas, setEmpresas] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({
+    nombre: '',
+    clienteId: '',
+    empresaId: '',
+    usuarioResponsableId: '',
+    valor: '',
+    probabilidad: 50,
+    etapa: 'Contacto Inicial',
+    fechaEstimadaCierre: '',
+    notas: ''
+  });
+
+  const etapas = [
+    { value: 'Contacto Inicial', label: 'Contacto Inicial', color: 'bg-blue-100 text-blue-800' },
+    { value: 'Propuesta Enviada', label: 'Propuesta Enviada', color: 'bg-purple-100 text-purple-800' },
+    { value: 'Negociación', label: 'Negociación', color: 'bg-yellow-100 text-yellow-800' },
+    { value: 'Cerrado Ganado', label: 'Cerrado Ganado', color: 'bg-green-100 text-green-800' },
+    { value: 'Cerrado Perdido', label: 'Cerrado Perdido', color: 'bg-red-100 text-red-800' }
+  ];
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [oportunidadesSnap, clientesSnap, empresasSnap, usuariosSnap] = await Promise.all([
+        getDocs(collection(db, 'oportunidades')),
+        getDocs(collection(db, 'clientes')),
+        getDocs(collection(db, 'empresas')),
+        getDocs(collection(db, 'usuarios'))
+      ]);
+
+      const oportunidadesList = oportunidadesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      oportunidadesList.sort((a, b) => new Date(b.fechaCreacion || 0) - new Date(a.fechaCreacion || 0));
+
+      setOportunidades(oportunidadesList);
+      setClientes(clientesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setEmpresas(empresasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setUsuarios(usuariosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (error) {
+      console.error("Error loading data:", error);
+    }
+    setLoading(false);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const dataToSave = {
+        ...formData,
+        valor: parseFloat(formData.valor) || 0,
+        probabilidad: parseInt(formData.probabilidad) || 0,
+        fechaCreacion: editingId ? formData.fechaCreacion : new Date().toISOString()
+      };
+
+      if (editingId) {
+        await updateDoc(doc(db, 'oportunidades', editingId), dataToSave);
+      } else {
+        await addDoc(collection(db, 'oportunidades'), dataToSave);
+      }
+
+      resetForm();
+      loadData();
+    } catch (error) {
+      console.error("Error saving oportunidad:", error);
+    }
+  };
+
+  const handleEdit = (oportunidad) => {
+    setFormData(oportunidad);
+    setEditingId(oportunidad.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('¿Eliminar esta oportunidad?')) {
+      try {
+        await deleteDoc(doc(db, 'oportunidades', id));
+        loadData();
+      } catch (error) {
+        console.error("Error deleting oportunidad:", error);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      nombre: '',
+      clienteId: '',
+      empresaId: '',
+      usuarioResponsableId: '',
+      valor: '',
+      probabilidad: 50,
+      etapa: 'Contacto Inicial',
+      fechaEstimadaCierre: '',
+      notas: ''
+    });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  const getEtapaColor = (etapa) => {
+    const found = etapas.find(e => e.value === etapa);
+    return found ? found.color : 'bg-gray-100 text-gray-800';
+  };
+
+  const getClienteNombre = (clienteId) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    return cliente ? cliente.nombre : 'N/A';
+  };
+
+  const getEmpresaNombre = (empresaId) => {
+    const empresa = empresas.find(e => e.id === empresaId);
+    return empresa ? empresa.nombre : 'N/A';
+  };
+
+  const getUsuarioNombre = (usuarioId) => {
+    const usuario = usuarios.find(u => u.id === usuarioId);
+    return usuario ? usuario.nombre : 'N/A';
+  };
+
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('es-MX');
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
         <h2 className="text-4xl font-bold">Oportunidades de Venta</h2>
+        <p className="text-blue-100 mt-2">Pipeline de ventas y gestión de oportunidades</p>
       </div>
+
       <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
-        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Pipeline de Ventas</h3>
-        <p className="text-gray-600 text-lg">Módulo en desarrollo - FASE 4</p>
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-2xl font-semibold text-blue-900">
+            {showForm ? (editingId ? 'Editar Oportunidad' : 'Nueva Oportunidad') : 'Pipeline de Ventas'}
+          </h3>
+          {!showForm && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-3 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all shadow-md"
+            >
+              <Plus className="w-5 h-5" />
+              Nueva Oportunidad
+            </button>
+          )}
+        </div>
+
+        {showForm ? (
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Nombre de la Oportunidad *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.nombre}
+                  onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  placeholder="Ej: Venta de software ERP"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Cliente *</label>
+                <select
+                  required
+                  value={formData.clienteId}
+                  onChange={(e) => setFormData({...formData, clienteId: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                >
+                  <option value="">Seleccionar cliente...</option>
+                  {clientes.map(cliente => (
+                    <option key={cliente.id} value={cliente.id}>{cliente.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Empresa</label>
+                <select
+                  value={formData.empresaId}
+                  onChange={(e) => setFormData({...formData, empresaId: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                >
+                  <option value="">Seleccionar empresa...</option>
+                  {empresas.map(empresa => (
+                    <option key={empresa.id} value={empresa.id}>{empresa.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Responsable *</label>
+                <select
+                  required
+                  value={formData.usuarioResponsableId}
+                  onChange={(e) => setFormData({...formData, usuarioResponsableId: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                >
+                  <option value="">Seleccionar usuario...</option>
+                  {usuarios.map(usuario => (
+                    <option key={usuario.id} value={usuario.id}>{usuario.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Valor Estimado (MXN) *</label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="0.01"
+                  value={formData.valor}
+                  onChange={(e) => setFormData({...formData, valor: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Probabilidad de Cierre: {formData.probabilidad}%
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={formData.probabilidad}
+                  onChange={(e) => setFormData({...formData, probabilidad: e.target.value})}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>0%</span>
+                  <span>50%</span>
+                  <span>100%</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Etapa del Pipeline *</label>
+                <select
+                  required
+                  value={formData.etapa}
+                  onChange={(e) => setFormData({...formData, etapa: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                >
+                  {etapas.map(etapa => (
+                    <option key={etapa.value} value={etapa.value}>{etapa.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Fecha Estimada de Cierre</label>
+                <input
+                  type="date"
+                  value={formData.fechaEstimadaCierre}
+                  onChange={(e) => setFormData({...formData, fechaEstimadaCierre: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Notas</label>
+              <textarea
+                value={formData.notas}
+                onChange={(e) => setFormData({...formData, notas: e.target.value})}
+                rows="4"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                placeholder="Detalles adicionales sobre la oportunidad..."
+              />
+            </div>
+
+            <div className="flex gap-4">
+              <button
+                type="submit"
+                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-md font-medium"
+              >
+                {editingId ? 'Actualizar' : 'Guardar'} Oportunidad
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all font-medium"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        ) : loading ? (
+          <div className="text-center py-12">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+            <p className="mt-4 text-gray-600">Cargando oportunidades...</p>
+          </div>
+        ) : oportunidades.length === 0 ? (
+          <div className="text-center py-12 bg-gray-50 rounded-lg">
+            <TrendingUp className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600 text-lg">No hay oportunidades registradas</p>
+            <p className="text-gray-500 mt-2">Crea tu primera oportunidad de venta</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Oportunidad</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Responsable</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Probabilidad</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Etapa</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cierre Est.</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {oportunidades.map((oportunidad) => (
+                  <tr key={oportunidad.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-medium text-gray-900">{oportunidad.nombre}</div>
+                      {oportunidad.empresaId && (
+                        <div className="text-xs text-gray-500">{getEmpresaNombre(oportunidad.empresaId)}</div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{getClienteNombre(oportunidad.clienteId)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{getUsuarioNombre(oportunidad.usuarioResponsableId)}</td>
+                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">{formatCurrency(oportunidad.valor)}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full"
+                            style={{ width: `${oportunidad.probabilidad || 0}%` }}
+                          ></div>
+                        </div>
+                        <span className="text-sm text-gray-600">{oportunidad.probabilidad}%</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getEtapaColor(oportunidad.etapa)}`}>
+                        {oportunidad.etapa}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{formatDate(oportunidad.fechaEstimadaCierre)}</td>
+                    <td className="px-6 py-4 text-sm font-medium space-x-3">
+                      <button
+                        onClick={() => handleEdit(oportunidad)}
+                        className="text-blue-600 hover:text-blue-900"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleDelete(oportunidad.id)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
