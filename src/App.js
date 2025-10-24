@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from './firebase';
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export default function App() {
   const [currentModule, setCurrentModule] = useState('dashboard');
@@ -2646,15 +2647,283 @@ function OportunidadesModule() {
 
 // Módulo Reportes
 function ReportesModule() {
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    totalClientes: 0,
+    totalOportunidades: 0,
+    totalProyectos: 0,
+    tareasPendientes: 0,
+    valorTotalOportunidades: 0,
+    oportunidadesPorEtapa: [],
+    proyectosPorEstado: [],
+    interaccionesPorTipo: [],
+    topOportunidades: []
+  });
+
+  useEffect(() => {
+    loadReportData();
+  }, []);
+
+  const loadReportData = async () => {
+    setLoading(true);
+    try {
+      const [clientesSnap, oportunidadesSnap, proyectosSnap, tareasSnap, interaccionesSnap] = await Promise.all([
+        getDocs(collection(db, 'clientes')),
+        getDocs(collection(db, 'oportunidades')),
+        getDocs(collection(db, 'proyectos')),
+        getDocs(collection(db, 'tareas')),
+        getDocs(collection(db, 'interacciones'))
+      ]);
+
+      const clientes = clientesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const oportunidades = oportunidadesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const proyectos = proyectosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const tareas = tareasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const interacciones = interaccionesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Calcular métricas
+      const totalClientes = clientes.length;
+      const totalOportunidades = oportunidades.length;
+      const totalProyectos = proyectos.length;
+      const tareasPendientes = tareas.filter(t => t.estado !== 'Completada').length;
+      const valorTotalOportunidades = oportunidades.reduce((sum, op) => sum + (parseFloat(op.valor) || 0), 0);
+
+      // Oportunidades por etapa
+      const etapas = ['Contacto Inicial', 'Propuesta Enviada', 'Negociación', 'Cerrado Ganado', 'Cerrado Perdido'];
+      const oportunidadesPorEtapa = etapas.map(etapa => ({
+        etapa,
+        cantidad: oportunidades.filter(op => op.etapa === etapa).length
+      }));
+
+      // Proyectos por estado
+      const estados = ['Planificación', 'En Curso', 'Pausado', 'Completado', 'Cancelado'];
+      const proyectosPorEstado = estados.map(estado => ({
+        name: estado,
+        value: proyectos.filter(p => p.estado === estado).length
+      })).filter(item => item.value > 0);
+
+      // Interacciones por tipo
+      const tipos = ['Llamada', 'Email', 'Reunión', 'Mensaje', 'Otro'];
+      const interaccionesPorTipo = tipos.map(tipo => ({
+        tipo,
+        cantidad: interacciones.filter(i => i.tipo === tipo).length
+      }));
+
+      // Top 5 oportunidades por valor
+      const topOportunidades = [...oportunidades]
+        .filter(op => op.etapa !== 'Cerrado Perdido')
+        .sort((a, b) => (parseFloat(b.valor) || 0) - (parseFloat(a.valor) || 0))
+        .slice(0, 5);
+
+      setStats({
+        totalClientes,
+        totalOportunidades,
+        totalProyectos,
+        tareasPendientes,
+        valorTotalOportunidades,
+        oportunidadesPorEtapa,
+        proyectosPorEstado,
+        interaccionesPorTipo,
+        topOportunidades
+      });
+    } catch (error) {
+      console.error("Error loading report data:", error);
+    }
+    setLoading(false);
+  };
+
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value);
+  };
+
+  const COLORS = ['#3b82f6', '#8b5cf6', '#eab308', '#22c55e', '#ef4444'];
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
         <h2 className="text-4xl font-bold">Reportes y Analítica</h2>
+        <p className="text-blue-100 mt-2">Dashboard ejecutivo con métricas clave del CRM</p>
       </div>
-      <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
-        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Dashboard de Reportes</h3>
-        <p className="text-gray-600 text-lg">Módulo en desarrollo - FASE 5</p>
-      </div>
+
+      {loading ? (
+        <div className="text-center py-12">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+          <p className="mt-4 text-gray-600">Generando reportes...</p>
+        </div>
+      ) : (
+        <>
+          {/* Métricas principales */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Total Clientes</p>
+                  <p className="text-3xl font-bold text-blue-600 mt-2">{stats.totalClientes}</p>
+                </div>
+                <UserCircle className="w-12 h-12 text-blue-500 opacity-20" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-purple-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Oportunidades</p>
+                  <p className="text-3xl font-bold text-purple-600 mt-2">{stats.totalOportunidades}</p>
+                </div>
+                <TrendingUp className="w-12 h-12 text-purple-500 opacity-20" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Proyectos Activos</p>
+                  <p className="text-3xl font-bold text-green-600 mt-2">{stats.totalProyectos}</p>
+                </div>
+                <Briefcase className="w-12 h-12 text-green-500 opacity-20" />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Tareas Pendientes</p>
+                  <p className="text-3xl font-bold text-orange-600 mt-2">{stats.tareasPendientes}</p>
+                </div>
+                <ClipboardList className="w-12 h-12 text-orange-500 opacity-20" />
+              </div>
+            </div>
+          </div>
+
+          {/* Valor total de oportunidades */}
+          <div className="bg-gradient-to-r from-green-600 to-green-700 rounded-xl shadow-lg p-8 mb-8 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-green-100 text-lg font-medium">Valor Total en Pipeline</p>
+                <p className="text-5xl font-bold mt-2">{formatCurrency(stats.valorTotalOportunidades)}</p>
+                <p className="text-green-100 mt-2">Oportunidades activas en el pipeline de ventas</p>
+              </div>
+              <div className="bg-white bg-opacity-20 rounded-full p-6">
+                <TrendingUp className="w-16 h-16" />
+              </div>
+            </div>
+          </div>
+
+          {/* Gráficas */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            {/* Oportunidades por etapa */}
+            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+              <h3 className="text-xl font-semibold text-blue-900 mb-6">Oportunidades por Etapa</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={stats.oportunidadesPorEtapa}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="etapa" angle={-45} textAnchor="end" height={100} fontSize={12} />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="cantidad" fill="#f97316" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Proyectos por estado */}
+            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+              <h3 className="text-xl font-semibold text-blue-900 mb-6">Proyectos por Estado</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={stats.proyectosPorEstado}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, value }) => `${name}: ${value}`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {stats.proyectosPorEstado.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Interacciones por tipo */}
+            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+              <h3 className="text-xl font-semibold text-blue-900 mb-6">Interacciones por Tipo</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={stats.interaccionesPorTipo}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="tipo" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="cantidad" fill="#3b82f6" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Top 5 Oportunidades */}
+            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+              <h3 className="text-xl font-semibold text-blue-900 mb-6">Top 5 Oportunidades</h3>
+              {stats.topOportunidades.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <p>No hay oportunidades activas</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {stats.topOportunidades.map((op, index) => (
+                    <div key={op.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center font-bold">
+                          {index + 1}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{op.nombre}</p>
+                          <p className="text-sm text-gray-500">{op.etapa}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-green-600">{formatCurrency(op.valor)}</p>
+                        <p className="text-sm text-gray-500">{op.probabilidad}% prob.</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Resumen adicional */}
+          <div className="bg-white rounded-xl shadow-md p-8 border-l-4 border-orange-500">
+            <h3 className="text-2xl font-semibold text-blue-900 mb-4">Resumen Ejecutivo</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="text-center p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-gray-600 mb-2">Tasa de Conversión</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {stats.totalOportunidades > 0
+                    ? Math.round((stats.oportunidadesPorEtapa.find(e => e.etapa === 'Cerrado Ganado')?.cantidad || 0) / stats.totalOportunidades * 100)
+                    : 0}%
+                </p>
+              </div>
+              <div className="text-center p-4 bg-green-50 rounded-lg">
+                <p className="text-sm text-gray-600 mb-2">Oportunidades Ganadas</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {stats.oportunidadesPorEtapa.find(e => e.etapa === 'Cerrado Ganado')?.cantidad || 0}
+                </p>
+              </div>
+              <div className="text-center p-4 bg-purple-50 rounded-lg">
+                <p className="text-sm text-gray-600 mb-2">Promedio por Oportunidad</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {stats.totalOportunidades > 0
+                    ? formatCurrency(stats.valorTotalOportunidades / stats.totalOportunidades)
+                    : formatCurrency(0)}
+                </p>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
