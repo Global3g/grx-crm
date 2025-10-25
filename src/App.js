@@ -36,14 +36,15 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen bg-gray-100">
-      <div className="w-80 flex-shrink-0 bg-gradient-to-b from-gray-900 to-gray-800 shadow-lg border-r-4 border-orange-500">
+      <div className="w-64 flex-shrink-0 bg-gradient-to-b from-gray-900 to-gray-800 shadow-lg border-r-4 border-orange-500">
         <div className="py-8 px-6 border-b-2 border-gray-700">
           <div className="flex flex-col items-center justify-center">
             {/* Logo GRX Holdings */}
             <img
               src="/grx-logo.png"
               alt="GRX Holdings"
-              className="w-56 h-auto mb-4"
+              className="h-auto mb-1"
+              style={{width: '240px'}}
               onError={(e) => {
                 e.target.style.display = 'none';
                 e.target.nextSibling.style.display = 'block';
@@ -609,22 +610,27 @@ function UsuariosModule() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Guardando usuario...', formData);
     try {
       if (editingId) {
         // Actualizar usuario existente
         const usuarioRef = doc(db, 'usuarios', editingId);
         await updateDoc(usuarioRef, formData);
+        console.log('Usuario actualizado');
       } else {
         // Crear nuevo usuario
-        await addDoc(collection(db, 'usuarios'), {
+        const docRef = await addDoc(collection(db, 'usuarios'), {
           ...formData,
           fechaCreacion: new Date().toISOString()
         });
+        console.log('Usuario creado con ID:', docRef.id);
       }
       resetForm();
       loadData();
+      alert('Usuario guardado exitosamente!');
     } catch (error) {
       console.error('Error guardando usuario:', error);
+      alert('Error guardando usuario: ' + error.message);
     }
   };
 
@@ -923,6 +929,7 @@ function ClientesModule() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Guardando cliente...', formData);
     try {
       const dataToSave = {
         ...formData,
@@ -933,17 +940,21 @@ function ClientesModule() {
         // Actualizar cliente existente
         const clienteRef = doc(db, 'clientes', editingId);
         await updateDoc(clienteRef, dataToSave);
+        console.log('Cliente actualizado');
       } else {
         // Crear nuevo cliente
-        await addDoc(collection(db, 'clientes'), {
+        const docRef = await addDoc(collection(db, 'clientes'), {
           ...dataToSave,
           fechaCreacion: new Date().toISOString()
         });
+        console.log('Cliente creado con ID:', docRef.id);
       }
       resetForm();
       loadData();
+      alert('Cliente guardado exitosamente!');
     } catch (error) {
       console.error('Error guardando cliente:', error);
+      alert('Error guardando cliente: ' + error.message);
     }
   };
 
@@ -1303,22 +1314,27 @@ function InteraccionesModule() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Guardando interacción...', formData);
     try {
       if (editingId) {
         // Actualizar interacción existente
         const interaccionRef = doc(db, 'interacciones', editingId);
         await updateDoc(interaccionRef, formData);
+        console.log('Interacción actualizada');
       } else {
         // Crear nueva interacción
-        await addDoc(collection(db, 'interacciones'), {
+        const docRef = await addDoc(collection(db, 'interacciones'), {
           ...formData,
           fechaCreacion: new Date().toISOString()
         });
+        console.log('Interacción creada con ID:', docRef.id);
       }
       resetForm();
       loadData();
+      alert('Interacción guardada exitosamente!');
     } catch (error) {
       console.error('Error guardando interacción:', error);
+      alert('Error guardando interacción: ' + error.message);
     }
   };
 
@@ -1698,22 +1714,27 @@ function TareasModule() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Guardando tarea...', formData);
     try {
       if (editingId) {
         // Actualizar tarea existente
         const tareaRef = doc(db, 'tareas', editingId);
         await updateDoc(tareaRef, formData);
+        console.log('Tarea actualizada');
       } else {
         // Crear nueva tarea
-        await addDoc(collection(db, 'tareas'), {
+        const docRef = await addDoc(collection(db, 'tareas'), {
           ...formData,
           fechaCreacion: new Date().toISOString()
         });
+        console.log('Tarea creada con ID:', docRef.id);
       }
       resetForm();
       loadData();
+      alert('Tarea guardada exitosamente!');
     } catch (error) {
       console.error('Error guardando tarea:', error);
+      alert('Error guardando tarea: ' + error.message);
     }
   };
 
@@ -2074,22 +2095,27 @@ function ProyectosModule() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Guardando proyecto...', formData);
     try {
       if (editingId) {
         // Actualizar proyecto existente
         const proyectoRef = doc(db, 'proyectos', editingId);
         await updateDoc(proyectoRef, formData);
+        console.log('Proyecto actualizado');
       } else {
         // Crear nuevo proyecto
-        await addDoc(collection(db, 'proyectos'), {
+        const docRef = await addDoc(collection(db, 'proyectos'), {
           ...formData,
           fechaCreacion: new Date().toISOString()
         });
+        console.log('Proyecto creado con ID:', docRef.id);
       }
       resetForm();
       loadData();
+      alert('Proyecto guardado exitosamente!');
     } catch (error) {
       console.error('Error guardando proyecto:', error);
+      alert('Error guardando proyecto: ' + error.message);
     }
   };
 
@@ -2445,6 +2471,7 @@ function OportunidadesModule() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Guardando oportunidad...', formData);
     try {
       const dataToSave = {
         ...formData,
@@ -2455,14 +2482,18 @@ function OportunidadesModule() {
 
       if (editingId) {
         await updateDoc(doc(db, 'oportunidades', editingId), dataToSave);
+        console.log('Oportunidad actualizada');
       } else {
-        await addDoc(collection(db, 'oportunidades'), dataToSave);
+        const docRef = await addDoc(collection(db, 'oportunidades'), dataToSave);
+        console.log('Oportunidad creada con ID:', docRef.id);
       }
 
       resetForm();
       loadData();
+      alert('Oportunidad guardada exitosamente!');
     } catch (error) {
       console.error("Error saving oportunidad:", error);
+      alert('Error guardando oportunidad: ' + error.message);
     }
   };
 
