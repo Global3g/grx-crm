@@ -1,8 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X } from 'lucide-react';
+import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from './firebase';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import * as XLSX from 'xlsx';
+
+// Utilidad para exportar a Excel
+const exportToExcel = (data, filename) => {
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Datos');
+  XLSX.writeFile(workbook, `${filename}.xlsx`);
+};
 
 export default function App() {
   const [currentModule, setCurrentModule] = useState('dashboard');
@@ -476,18 +485,42 @@ function EmpresasModule() {
     setShowForm(false);
   };
 
+  const handleExport = () => {
+    const dataToExport = empresas.map(empresa => ({
+      Nombre: empresa.nombre,
+      País: empresa.pais,
+      'ID Fiscal': empresa.identificadorFiscal,
+      Dirección: empresa.direccion,
+      Teléfono: empresa.telefono,
+      Email: empresa.email,
+      'Sitio Web': empresa.sitioWeb,
+      Activa: empresa.activa ? 'Sí' : 'No'
+    }));
+    exportToExcel(dataToExport, 'Empresas');
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
         <div className="flex items-center justify-between">
           <h2 className="text-4xl font-bold">Empresas</h2>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
-          >
-            {showForm ? <X size={24} /> : <Plus size={24} />}
-            <span className="text-xl">{showForm ? 'Cancelar' : 'Nueva Empresa'}</span>
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-2 bg-green-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-600 transition-all"
+              title="Exportar a Excel"
+            >
+              <Download size={24} />
+              <span className="text-xl">Exportar</span>
+            </button>
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
+            >
+              {showForm ? <X size={24} /> : <Plus size={24} />}
+              <span className="text-xl">{showForm ? 'Cancelar' : 'Nueva Empresa'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -865,18 +898,39 @@ function UsuariosModule() {
     return roles.find(r => r.value === rolValue) || roles[2];
   };
 
+  const handleExport = () => {
+    const dataToExport = usuarios.map(usuario => ({
+      Nombre: usuario.nombre,
+      Email: usuario.email,
+      Teléfono: usuario.telefono,
+      Rol: usuario.rol,
+      Empresa: getEmpresaNombre(usuario.empresaId),
+      Activo: usuario.activo ? 'Sí' : 'No'
+    }));
+    exportToExcel(dataToExport, 'Usuarios');
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
         <div className="flex items-center justify-between">
           <h2 className="text-4xl font-bold">Usuarios y Roles</h2>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
-          >
-            {showForm ? <X size={24} /> : <Plus size={24} />}
-            <span className="text-xl">{showForm ? 'Cancelar' : 'Nuevo Usuario'}</span>
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-2 bg-green-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-600 transition-all"
+            >
+              <Download size={24} />
+              <span className="text-xl">Exportar</span>
+            </button>
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
+            >
+              {showForm ? <X size={24} /> : <Plus size={24} />}
+              <span className="text-xl">{showForm ? 'Cancelar' : 'Nuevo Usuario'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1193,18 +1247,42 @@ function ClientesModule() {
     return empresa ? empresa.nombre : 'Sin empresa';
   };
 
+  const handleExport = () => {
+    const dataToExport = clientes.map(cliente => ({
+      Nombre: cliente.nombre,
+      Empresa: getEmpresaNombre(cliente.empresaId),
+      Email: cliente.email,
+      Teléfono: cliente.telefono,
+      Cargo: cliente.cargo,
+      Industria: cliente.industria,
+      Ubicación: cliente.ubicacion,
+      Etiquetas: Array.isArray(cliente.etiquetas) ? cliente.etiquetas.join(', ') : '',
+      Activo: cliente.activo ? 'Sí' : 'No'
+    }));
+    exportToExcel(dataToExport, 'Clientes');
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
         <div className="flex items-center justify-between">
           <h2 className="text-4xl font-bold">Clientes</h2>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
-          >
-            {showForm ? <X size={24} /> : <Plus size={24} />}
-            <span className="text-xl">{showForm ? 'Cancelar' : 'Nuevo Cliente'}</span>
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-2 bg-green-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-600 transition-all"
+            >
+              <Download size={24} />
+              <span className="text-xl">Exportar</span>
+            </button>
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
+            >
+              {showForm ? <X size={24} /> : <Plus size={24} />}
+              <span className="text-xl">{showForm ? 'Cancelar' : 'Nuevo Cliente'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2815,6 +2893,20 @@ function OportunidadesModule() {
     return tipos[tipo] || '📝';
   };
 
+  const handleExport = () => {
+    const dataToExport = oportunidades.map(op => ({
+      Nombre: op.nombre,
+      Cliente: getClienteNombre(op.clienteId),
+      Empresa: getEmpresaNombre(op.empresaId),
+      Responsable: getUsuarioNombre(op.usuarioResponsableId),
+      Valor: op.valor,
+      Probabilidad: op.probabilidad + '%',
+      Etapa: op.etapa,
+      'Fecha Cierre': formatDate(op.fechaEstimadaCierre)
+    }));
+    exportToExcel(dataToExport, 'Oportunidades');
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
@@ -2843,6 +2935,13 @@ function OportunidadesModule() {
                   📊 Tabla
                 </button>
               </div>
+              <button
+                onClick={handleExport}
+                className="flex items-center gap-2 bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-all shadow-md"
+              >
+                <Download className="w-5 h-5" />
+                Exportar
+              </button>
               <button
                 onClick={() => setShowForm(true)}
                 className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-3 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all shadow-md"
