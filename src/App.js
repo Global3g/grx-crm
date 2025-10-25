@@ -357,6 +357,7 @@ function EmpresasModule() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
     nombre: '',
     pais: 'MX',
@@ -683,33 +684,56 @@ function EmpresasModule() {
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-4 border-orange-500"></div>
             <p className="text-gray-600 mt-4">Cargando empresas...</p>
           </div>
-        ) : empresas.length === 0 ? (
-          <div className="text-center py-12">
-            <Building2 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600 text-lg">No hay empresas registradas</p>
-            <button
-              onClick={() => setShowForm(true)}
-              className="mt-4 text-blue-600 font-semibold hover:text-blue-700"
-            >
-              Crear primera empresa
-            </button>
-          </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gray-50">
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Logo</th>
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Empresa</th>
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">País</th>
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">ID Fiscal</th>
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Contacto</th>
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Estado</th>
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {empresas.map(empresa => {
+          <>
+            {/* Búsqueda */}
+            <div className="mb-6">
+              <input
+                type="text"
+                placeholder="🔍 Buscar por nombre, país, email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-6 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-lg"
+              />
+            </div>
+
+            {empresas.filter(empresa =>
+              empresa.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              empresa.pais?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              empresa.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              empresa.identificadorFiscal?.toLowerCase().includes(searchTerm.toLowerCase())
+            ).length === 0 ? (
+              <div className="text-center py-12">
+                <Building2 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600 text-lg">No se encontraron empresas con "{searchTerm}"</p>
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="mt-4 text-blue-600 font-semibold hover:text-blue-700"
+                >
+                  Limpiar búsqueda
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Logo</th>
+                      <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Empresa</th>
+                      <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">País</th>
+                      <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">ID Fiscal</th>
+                      <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Contacto</th>
+                      <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Estado</th>
+                      <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {empresas.filter(empresa =>
+                      empresa.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      empresa.pais?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      empresa.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      empresa.identificadorFiscal?.toLowerCase().includes(searchTerm.toLowerCase())
+                    ).map(empresa => {
                   const paisInfo = paises.find(p => p.code === (empresa.pais || 'MX')) || paises[0];
                   return (
                     <tr key={empresa.id} className="border-b border-gray-200 hover:bg-gray-50">
@@ -763,9 +787,11 @@ function EmpresasModule() {
                     </tr>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
