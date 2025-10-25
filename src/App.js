@@ -129,29 +129,214 @@ export default function App() {
 
 // Módulo Dashboard
 function DashboardModule() {
+  const [stats, setStats] = useState({
+    totalEmpresas: 0,
+    totalClientes: 0,
+    totalOportunidades: 0,
+    totalTareas: 0,
+    tareasPendientes: 0,
+    valorPipeline: 0
+  });
+  const [oportunidadesPorEtapa, setOportunidadesPorEtapa] = useState([]);
+  const [interaccionesRecientes, setInteraccionesRecientes] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      const [empresasSnap, clientesSnap, oportunidadesSnap, tareasSnap, interaccionesSnap, usuariosSnap] = await Promise.all([
+        getDocs(collection(db, 'empresas')),
+        getDocs(collection(db, 'clientes')),
+        getDocs(collection(db, 'oportunidades')),
+        getDocs(collection(db, 'tareas')),
+        getDocs(collection(db, 'interacciones')),
+        getDocs(collection(db, 'usuarios'))
+      ]);
+
+      const oportunidades = oportunidadesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const tareas = tareasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const interacciones = interaccionesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const clientes = clientesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const usuarios = usuariosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Calcular stats
+      setStats({
+        totalEmpresas: empresasSnap.size,
+        totalClientes: clientesSnap.size,
+        totalOportunidades: oportunidadesSnap.size,
+        totalTareas: tareasSnap.size,
+        tareasPendientes: tareas.filter(t => t.estado === 'pendiente').length,
+        valorPipeline: oportunidades.reduce((sum, o) => sum + (parseFloat(o.valor) || 0), 0)
+      });
+
+      // Agrupar oportunidades por etapa
+      const etapas = ['Contacto Inicial', 'Propuesta Enviada', 'Negociación', 'Cerrado Ganado', 'Cerrado Perdido'];
+      const oportunidadesAgrupadas = etapas.map(etapa => {
+        const ops = oportunidades.filter(o => o.etapa === etapa);
+        return {
+          etapa: etapa,
+          cantidad: ops.length,
+          valor: ops.reduce((sum, o) => sum + (parseFloat(o.valor) || 0), 0)
+        };
+      });
+      setOportunidadesPorEtapa(oportunidadesAgrupadas);
+
+      // Últimas 5 interacciones
+      const interaccionesConDatos = interacciones
+        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+        .slice(0, 5)
+        .map(i => ({
+          ...i,
+          clienteNombre: clientes.find(c => c.id === i.clienteId)?.nombre || 'N/A',
+          usuarioNombre: usuarios.find(u => u.id === i.usuarioId)?.nombre || 'N/A'
+        }));
+      setInteraccionesRecientes(interaccionesConDatos);
+    } catch (error) {
+      console.error('Error cargando dashboard:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+  };
+
+  const COLORS = ['#3B82F6', '#8B5CF6', '#F59E0B', '#10B981', '#EF4444'];
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-16 w-16 border-b-4 border-orange-500 mb-4"></div>
+          <p className="text-2xl text-gray-600">Cargando Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
         <h2 className="text-4xl font-bold">Dashboard</h2>
+        <p className="text-blue-100 mt-2">Vista general del sistema</p>
       </div>
-      <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
-        <h3 className="text-2xl font-semibold mb-6 text-blue-900">Bienvenido a GRX-CRM</h3>
-        <p className="text-gray-700 text-lg mb-4">Sistema CRM multi-empresa, multi-usuario y multi-proyectos</p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-          <div className="p-6 bg-blue-50 rounded-lg border-2 border-blue-200">
-            <h4 className="font-semibold text-blue-900 mb-2 text-xl">✅ FASE 1 - MVP</h4>
-            <p className="text-blue-700">Empresas + Usuarios/Roles + Auth</p>
-          </div>
-          <div className="p-6 bg-blue-50 rounded-lg border-2 border-blue-200">
-            <h4 className="font-semibold text-blue-900 mb-2 text-xl">✅ FASE 2</h4>
-            <p className="text-blue-700">Clientes + Interacciones</p>
-          </div>
-          <div className="p-6 bg-blue-50 rounded-lg border-2 border-blue-200">
-            <h4 className="font-semibold text-blue-900 mb-2 text-xl">✅ FASE 3</h4>
-            <p className="text-blue-700">Tareas + Proyectos</p>
+      {/* KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-blue-100 text-sm">Empresas</p>
+              <p className="text-4xl font-bold mt-2">{stats.totalEmpresas}</p>
+            </div>
+            <Building2 className="w-16 h-16 text-blue-200" />
           </div>
         </div>
+
+        <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-purple-100 text-sm">Clientes</p>
+              <p className="text-4xl font-bold mt-2">{stats.totalClientes}</p>
+            </div>
+            <UserCircle className="w-16 h-16 text-purple-200" />
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-green-100 text-sm">Oportunidades</p>
+              <p className="text-4xl font-bold mt-2">{stats.totalOportunidades}</p>
+              <p className="text-green-100 text-xs mt-1">{formatCurrency(stats.valorPipeline)}</p>
+            </div>
+            <TrendingUp className="w-16 h-16 text-green-200" />
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg p-6 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-orange-100 text-sm">Tareas Pendientes</p>
+              <p className="text-4xl font-bold mt-2">{stats.tareasPendientes}</p>
+              <p className="text-orange-100 text-xs mt-1">de {stats.totalTareas} totales</p>
+            </div>
+            <ClipboardList className="w-16 h-16 text-orange-200" />
+          </div>
+        </div>
+      </div>
+
+      {/* Gráficas */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+          <h3 className="text-xl font-semibold text-blue-900 mb-4">Pipeline de Ventas</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={oportunidadesPorEtapa}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="etapa" angle={-45} textAnchor="end" height={100} />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="cantidad" fill="#3B82F6" name="Cantidad" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+          <h3 className="text-xl font-semibold text-blue-900 mb-4">Valor por Etapa</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={oportunidadesPorEtapa}
+                dataKey="valor"
+                nameKey="etapa"
+                cx="50%"
+                cy="50%"
+                outerRadius={100}
+                label={(entry) => `${entry.etapa}: ${formatCurrency(entry.valor)}`}
+              >
+                {oportunidadesPorEtapa.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(value) => formatCurrency(value)} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Actividad Reciente */}
+      <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+        <h3 className="text-xl font-semibold text-blue-900 mb-4">Actividad Reciente</h3>
+        {interaccionesRecientes.length === 0 ? (
+          <p className="text-gray-500 text-center py-8">No hay interacciones registradas</p>
+        ) : (
+          <div className="space-y-3">
+            {interaccionesRecientes.map(interaccion => (
+              <div key={interaccion.id} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
+                <div className="text-2xl">
+                  {interaccion.tipo === 'llamada' && '📞'}
+                  {interaccion.tipo === 'email' && '📧'}
+                  {interaccion.tipo === 'reunion' && '🤝'}
+                  {interaccion.tipo === 'mensaje' && '💬'}
+                  {interaccion.tipo === 'otro' && '📝'}
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-900">{interaccion.clienteNombre}</p>
+                  <p className="text-sm text-gray-600">{interaccion.notas || 'Sin notas'}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-gray-500">{interaccion.usuarioNombre}</p>
+                  <p className="text-xs text-gray-400">{new Date(interaccion.fecha).toLocaleDateString('es-MX')}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
