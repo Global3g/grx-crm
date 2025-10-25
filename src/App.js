@@ -371,6 +371,8 @@ function EmpresasModule() {
     email: '',
     sitioWeb: '',
     logo: '',
+    colorPrimario: '#ff6b35',
+    colorSecundario: '#004e89',
     activa: true
   });
 
@@ -446,6 +448,8 @@ function EmpresasModule() {
       email: empresa.email,
       sitioWeb: empresa.sitioWeb,
       logo: empresa.logo || '',
+      colorPrimario: empresa.colorPrimario || '#ff6b35',
+      colorSecundario: empresa.colorSecundario || '#004e89',
       activa: empresa.activa
     });
     setEditingId(empresa.id);
@@ -484,6 +488,8 @@ function EmpresasModule() {
       email: '',
       sitioWeb: '',
       logo: '',
+      colorPrimario: '#ff6b35',
+      colorSecundario: '#004e89',
       activa: true
     });
     setEditingId(null);
@@ -596,6 +602,48 @@ function EmpresasModule() {
                     <img src={formData.logo} alt="Logo preview" className="h-16 w-auto object-contain border border-gray-200 rounded p-2" />
                   </div>
                 )}
+              </div>
+
+              {/* Color Primario */}
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Color Primario</label>
+                <div className="flex gap-3 items-center">
+                  <input
+                    type="color"
+                    value={formData.colorPrimario}
+                    onChange={(e) => setFormData({...formData, colorPrimario: e.target.value})}
+                    className="h-12 w-24 border border-gray-300 rounded-md cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={formData.colorPrimario}
+                    onChange={(e) => setFormData({...formData, colorPrimario: e.target.value})}
+                    className="flex-1 px-4 py-3 text-lg border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                    placeholder="#ff6b35"
+                    pattern="^#[0-9A-Fa-f]{6}$"
+                  />
+                </div>
+              </div>
+
+              {/* Color Secundario */}
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Color Secundario</label>
+                <div className="flex gap-3 items-center">
+                  <input
+                    type="color"
+                    value={formData.colorSecundario}
+                    onChange={(e) => setFormData({...formData, colorSecundario: e.target.value})}
+                    className="h-12 w-24 border border-gray-300 rounded-md cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={formData.colorSecundario}
+                    onChange={(e) => setFormData({...formData, colorSecundario: e.target.value})}
+                    className="flex-1 px-4 py-3 text-lg border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                    placeholder="#004e89"
+                    pattern="^#[0-9A-Fa-f]{6}$"
+                  />
+                </div>
               </div>
 
               {/* Dirección */}
@@ -727,6 +775,7 @@ function EmpresasModule() {
                       <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">País</th>
                       <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">ID Fiscal</th>
                       <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Contacto</th>
+                      <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Tema</th>
                       <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Estado</th>
                       <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Acciones</th>
                     </tr>
@@ -762,6 +811,28 @@ function EmpresasModule() {
                       <td className="px-6 py-4 text-sm text-gray-600">
                         <div>{empresa.telefono || '-'}</div>
                         <div className="text-xs">{empresa.email || '-'}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2 items-center">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-8 h-8 rounded border-2 border-gray-300"
+                                style={{backgroundColor: empresa.colorPrimario || '#ff6b35'}}
+                                title="Color Primario"
+                              ></div>
+                              <span className="text-xs text-gray-500">{empresa.colorPrimario || '#ff6b35'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-8 h-8 rounded border-2 border-gray-300"
+                                style={{backgroundColor: empresa.colorSecundario || '#004e89'}}
+                                title="Color Secundario"
+                              ></div>
+                              <span className="text-xs text-gray-500">{empresa.colorSecundario || '#004e89'}</span>
+                            </div>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
