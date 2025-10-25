@@ -2738,6 +2738,7 @@ function OportunidadesModule() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [vistaKanban, setVistaKanban] = useState(true);
+  const [interaccionSeleccionada, setInteraccionSeleccionada] = useState(null);
   const [formData, setFormData] = useState({
     nombre: '',
     clienteId: '',
@@ -3168,9 +3169,17 @@ function OportunidadesModule() {
                             <p className="text-xs text-gray-500 mb-1">Interacciones:</p>
                             <div className="flex gap-1 flex-wrap">
                               {getInteraccionesPorOportunidad(oportunidad.id).slice(0, 3).map(interaccion => (
-                                <span key={interaccion.id} className="text-xs" title={`${interaccion.tipo} - ${interaccion.notas || 'Sin notas'}`}>
+                                <button
+                                  key={interaccion.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setInteraccionSeleccionada(interaccion);
+                                  }}
+                                  className="text-lg hover:scale-125 transition-transform cursor-pointer"
+                                  title="Click para ver detalles"
+                                >
                                   {getTipoInteraccionIcon(interaccion.tipo)}
-                                </span>
+                                </button>
                               ))}
                               {getInteraccionesPorOportunidad(oportunidad.id).length > 3 && (
                                 <span className="text-xs text-gray-400">+{getInteraccionesPorOportunidad(oportunidad.id).length - 3}</span>
@@ -3267,6 +3276,104 @@ function OportunidadesModule() {
           </div>
         )}
       </div>
+
+      {/* Modal de Interacción */}
+      {interaccionSeleccionada && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setInteraccionSeleccionada(null)}>
+          <div className="bg-white rounded-xl shadow-2xl p-8 max-w-2xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <span className="text-4xl">{getTipoInteraccionIcon(interaccionSeleccionada.tipo)}</span>
+                <h3 className="text-2xl font-bold text-gray-900 capitalize">{interaccionSeleccionada.tipo}</h3>
+              </div>
+              <button
+                onClick={() => setInteraccionSeleccionada(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X size={28} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Cliente</p>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {clientes.find(c => c.id === interaccionSeleccionada.clienteId)?.nombre || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Usuario</p>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {usuarios.find(u => u.id === interaccionSeleccionada.usuarioId)?.nombre || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Fecha</p>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {new Date(interaccionSeleccionada.fecha).toLocaleDateString('es-MX', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </p>
+                </div>
+                {interaccionSeleccionada.hora && (
+                  <div>
+                    <p className="text-sm text-gray-500">Hora</p>
+                    <p className="text-lg font-semibold text-gray-900">{interaccionSeleccionada.hora}</p>
+                  </div>
+                )}
+              </div>
+
+              {interaccionSeleccionada.duracion && (
+                <div>
+                  <p className="text-sm text-gray-500">Duración</p>
+                  <p className="text-lg text-gray-900">{interaccionSeleccionada.duracion}</p>
+                </div>
+              )}
+
+              {interaccionSeleccionada.notas && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">Resumen / Notas</p>
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <p className="text-gray-900 whitespace-pre-wrap">{interaccionSeleccionada.notas}</p>
+                  </div>
+                </div>
+              )}
+
+              {interaccionSeleccionada.seguimiento && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">Seguimiento</p>
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                    <p className="text-gray-900">{interaccionSeleccionada.seguimiento}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                  interaccionSeleccionada.completado
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-yellow-100 text-yellow-800'
+                }`}>
+                  {interaccionSeleccionada.completado ? '✓ Completado' : '⏳ Pendiente'}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setInteraccionSeleccionada(null)}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
