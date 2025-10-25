@@ -143,13 +143,13 @@ function DashboardModule() {
             <h4 className="font-semibold text-blue-900 mb-2 text-xl">✅ FASE 1 - MVP</h4>
             <p className="text-blue-700">Empresas + Usuarios/Roles + Auth</p>
           </div>
-          <div className="p-6 bg-slate-100 rounded-lg border-2 border-slate-300">
-            <h4 className="font-semibold text-slate-700 mb-2 text-xl">📞 FASE 2</h4>
-            <p className="text-slate-600">Clientes + Interacciones</p>
+          <div className="p-6 bg-blue-50 rounded-lg border-2 border-blue-200">
+            <h4 className="font-semibold text-blue-900 mb-2 text-xl">✅ FASE 2</h4>
+            <p className="text-blue-700">Clientes + Interacciones</p>
           </div>
-          <div className="p-6 bg-slate-100 rounded-lg border-2 border-slate-300">
-            <h4 className="font-semibold text-slate-700 mb-2 text-xl">📌 FASE 3</h4>
-            <p className="text-slate-600">Tareas + Proyectos</p>
+          <div className="p-6 bg-blue-50 rounded-lg border-2 border-blue-200">
+            <h4 className="font-semibold text-blue-900 mb-2 text-xl">✅ FASE 3</h4>
+            <p className="text-blue-700">Tareas + Proyectos</p>
           </div>
         </div>
       </div>
