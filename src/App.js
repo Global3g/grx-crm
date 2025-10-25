@@ -1250,6 +1250,7 @@ function InteraccionesModule() {
   const [interacciones, setInteracciones] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [oportunidades, setOportunidades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1257,6 +1258,7 @@ function InteraccionesModule() {
     tipo: 'llamada',
     clienteId: '',
     usuarioId: '',
+    oportunidadId: '',
     fecha: new Date().toISOString().split('T')[0],
     hora: '',
     duracion: '',
@@ -1305,6 +1307,14 @@ function InteraccionesModule() {
         ...doc.data()
       }));
       setUsuarios(usuariosData);
+
+      // Cargar oportunidades
+      const oportunidadesSnapshot = await getDocs(collection(db, 'oportunidades'));
+      const oportunidadesData = oportunidadesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setOportunidades(oportunidadesData);
     } catch (error) {
       console.error('Error cargando datos:', error);
     } finally {
@@ -1343,6 +1353,7 @@ function InteraccionesModule() {
       tipo: interaccion.tipo,
       clienteId: interaccion.clienteId || '',
       usuarioId: interaccion.usuarioId || '',
+      oportunidadId: interaccion.oportunidadId || '',
       fecha: interaccion.fecha,
       hora: interaccion.hora || '',
       duracion: interaccion.duracion || '',
@@ -1370,6 +1381,7 @@ function InteraccionesModule() {
       tipo: 'llamada',
       clienteId: '',
       usuarioId: '',
+      oportunidadId: '',
       fecha: new Date().toISOString().split('T')[0],
       hora: '',
       duracion: '',
@@ -1455,6 +1467,19 @@ function InteraccionesModule() {
                   <option value="">Sin asignar</option>
                   {usuarios.map(usuario => (
                     <option key={usuario.id} value={usuario.id}>{usuario.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Oportunidad (opcional)</label>
+                <select
+                  value={formData.oportunidadId}
+                  onChange={(e) => setFormData({...formData, oportunidadId: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                >
+                  <option value="">Sin vincular a oportunidad</option>
+                  {oportunidades.map(oportunidad => (
+                    <option key={oportunidad.id} value={oportunidad.id}>{oportunidad.nombre}</option>
                   ))}
                 </select>
               </div>
@@ -2419,6 +2444,7 @@ function OportunidadesModule() {
   const [clientes, setClientes] = useState([]);
   const [empresas, setEmpresas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [interacciones, setInteracciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -2450,11 +2476,12 @@ function OportunidadesModule() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [oportunidadesSnap, clientesSnap, empresasSnap, usuariosSnap] = await Promise.all([
+      const [oportunidadesSnap, clientesSnap, empresasSnap, usuariosSnap, interaccionesSnap] = await Promise.all([
         getDocs(collection(db, 'oportunidades')),
         getDocs(collection(db, 'clientes')),
         getDocs(collection(db, 'empresas')),
-        getDocs(collection(db, 'usuarios'))
+        getDocs(collection(db, 'usuarios')),
+        getDocs(collection(db, 'interacciones'))
       ]);
 
       const oportunidadesList = oportunidadesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -2464,6 +2491,7 @@ function OportunidadesModule() {
       setClientes(clientesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setEmpresas(empresasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setUsuarios(usuariosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setInteracciones(interaccionesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     } catch (error) {
       console.error("Error loading data:", error);
     }
@@ -2585,6 +2613,21 @@ function OportunidadesModule() {
 
   const getOportunidadesPorEtapa = (etapa) => {
     return oportunidades.filter(o => o.etapa === etapa);
+  };
+
+  const getInteraccionesPorOportunidad = (oportunidadId) => {
+    return interacciones.filter(i => i.oportunidadId === oportunidadId);
+  };
+
+  const getTipoInteraccionIcon = (tipo) => {
+    const tipos = {
+      'llamada': '📞',
+      'email': '📧',
+      'reunion': '🤝',
+      'mensaje': '💬',
+      'otro': '📝'
+    };
+    return tipos[tipo] || '📝';
   };
 
   return (
@@ -2810,6 +2853,21 @@ function OportunidadesModule() {
                         <p>👤 {getClienteNombre(oportunidad.clienteId)}</p>
                         <p className="font-semibold text-green-600">{formatCurrency(oportunidad.valor)}</p>
                         <p>📅 {formatDate(oportunidad.fechaEstimadaCierre)}</p>
+                        {getInteraccionesPorOportunidad(oportunidad.id).length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-gray-200">
+                            <p className="text-xs text-gray-500 mb-1">Interacciones:</p>
+                            <div className="flex gap-1 flex-wrap">
+                              {getInteraccionesPorOportunidad(oportunidad.id).slice(0, 3).map(interaccion => (
+                                <span key={interaccion.id} className="text-xs" title={`${interaccion.tipo} - ${interaccion.notas || 'Sin notas'}`}>
+                                  {getTipoInteraccionIcon(interaccion.tipo)}
+                                </span>
+                              ))}
+                              {getInteraccionesPorOportunidad(oportunidad.id).length > 3 && (
+                                <span className="text-xs text-gray-400">+{getInteraccionesPorOportunidad(oportunidad.id).length - 3}</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
