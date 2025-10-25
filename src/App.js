@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download } from 'lucide-react';
+import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from './firebase';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -24,6 +24,7 @@ export default function App() {
     { id: 'clientes', name: 'Clientes', icon: UserCircle },
     { id: 'interacciones', name: 'Interacciones', icon: Phone },
     { id: 'tareas', name: 'Tareas', icon: ClipboardList },
+    { id: 'calendario', name: 'Calendario', icon: Calendar },
     { id: 'proyectos', name: 'Proyectos', icon: Briefcase },
     { id: 'oportunidades', name: 'Oportunidades', icon: TrendingUp },
     { id: 'reportes', name: 'Reportes', icon: BarChart3 },
@@ -111,6 +112,9 @@ export default function App() {
           )}
           {currentModule === 'tareas' && (
             <TareasModule />
+          )}
+          {currentModule === 'calendario' && (
+            <CalendarioModule />
           )}
           {currentModule === 'proyectos' && (
             <ProyectosModule />
@@ -1943,6 +1947,385 @@ function InteraccionesModule() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Módulo Calendario
+function CalendarioModule() {
+  const [tareas, setTareas] = useState([]);
+  const [interacciones, setInteracciones] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedEvent, setSelectedEvent] = useState(null);
+
+  // Cargar datos desde Firestore
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const [tareasSnap, interaccionesSnap, clientesSnap, usuariosSnap] = await Promise.all([
+          getDocs(collection(db, 'tareas')),
+          getDocs(collection(db, 'interacciones')),
+          getDocs(collection(db, 'clientes')),
+          getDocs(collection(db, 'usuarios'))
+        ]);
+
+        setTareas(tareasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setInteracciones(interaccionesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setClientes(clientesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setUsuarios(usuariosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      } catch (error) {
+        console.error('Error cargando datos:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // Funciones de calendario
+  const getDaysInMonth = (date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+
+    const days = [];
+
+    // Días del mes anterior (espacios vacíos)
+    for (let i = 0; i < startingDayOfWeek; i++) {
+      days.push(null);
+    }
+
+    // Días del mes actual
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push(new Date(year, month, i));
+    }
+
+    return days;
+  };
+
+  const getEventsForDate = (date) => {
+    if (!date) return [];
+
+    const dateStr = date.toISOString().split('T')[0];
+    const events = [];
+
+    // Agregar tareas
+    tareas.forEach(tarea => {
+      if (tarea.fechaVencimiento === dateStr) {
+        events.push({
+          type: 'tarea',
+          data: tarea,
+          color: tarea.prioridad === 'alta' ? 'bg-red-100 text-red-800 border-red-300' :
+                 tarea.prioridad === 'media' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
+                 'bg-green-100 text-green-800 border-green-300'
+        });
+      }
+    });
+
+    // Agregar interacciones
+    interacciones.forEach(interaccion => {
+      if (interaccion.fecha === dateStr) {
+        events.push({
+          type: 'interaccion',
+          data: interaccion,
+          color: interaccion.tipo === 'llamada' ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                 interaccion.tipo === 'email' ? 'bg-purple-100 text-purple-800 border-purple-300' :
+                 interaccion.tipo === 'reunion' ? 'bg-green-100 text-green-800 border-green-300' :
+                 interaccion.tipo === 'mensaje' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
+                 'bg-gray-100 text-gray-800 border-gray-300'
+        });
+      }
+    });
+
+    return events;
+  };
+
+  const navigateMonth = (direction) => {
+    const newDate = new Date(currentDate);
+    newDate.setMonth(currentDate.getMonth() + direction);
+    setCurrentDate(newDate);
+  };
+
+  const isToday = (date) => {
+    if (!date) return false;
+    const today = new Date();
+    return date.toDateString() === today.toDateString();
+  };
+
+  const getTipoIcon = (tipo) => {
+    const icons = {
+      llamada: '📞',
+      email: '📧',
+      reunion: '🤝',
+      mensaje: '💬',
+      otro: '📝'
+    };
+    return icons[tipo] || '📝';
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-4 border-orange-500 mb-4"></div>
+          <p className="text-lg text-gray-600">Cargando calendario...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-4xl font-bold text-gray-900 flex items-center gap-3">
+          <Calendar size={40} className="text-orange-500" />
+          Calendario
+        </h1>
+      </div>
+
+      {/* Navegación del mes */}
+      <div className="bg-white rounded-xl shadow-lg p-6">
+        <div className="flex items-center justify-between mb-6">
+          <button
+            onClick={() => navigateMonth(-1)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <h2 className="text-3xl font-bold text-gray-900">
+            {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+          </h2>
+          <button
+            onClick={() => navigateMonth(1)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <ChevronRight size={24} />
+          </button>
+        </div>
+
+        {/* Grid del calendario */}
+        <div className="grid grid-cols-7 gap-2">
+          {/* Nombres de los días */}
+          {dayNames.map(day => (
+            <div key={day} className="text-center font-semibold text-gray-600 py-2">
+              {day}
+            </div>
+          ))}
+
+          {/* Días del mes */}
+          {getDaysInMonth(currentDate).map((date, index) => {
+            const events = getEventsForDate(date);
+            const today = isToday(date);
+
+            return (
+              <div
+                key={index}
+                className={`min-h-[120px] border rounded-lg p-2 ${
+                  date ? 'bg-white hover:bg-gray-50' : 'bg-gray-50'
+                } ${today ? 'border-orange-500 border-2 shadow-md' : 'border-gray-200'}`}
+              >
+                {date && (
+                  <>
+                    <div className={`text-sm font-semibold mb-1 ${
+                      today ? 'text-orange-500' : 'text-gray-700'
+                    }`}>
+                      {date.getDate()}
+                    </div>
+                    <div className="space-y-1">
+                      {events.slice(0, 3).map((event, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setSelectedEvent(event)}
+                          className={`w-full text-left px-2 py-1 rounded text-xs border ${event.color} hover:opacity-80 transition-opacity truncate`}
+                        >
+                          {event.type === 'tarea' ? (
+                            <span>📋 {event.data.titulo}</span>
+                          ) : (
+                            <span>{getTipoIcon(event.data.tipo)} {clientes.find(c => c.id === event.data.clienteId)?.nombre || 'Cliente'}</span>
+                          )}
+                        </button>
+                      ))}
+                      {events.length > 3 && (
+                        <div className="text-xs text-gray-500 px-2">
+                          +{events.length - 3} más
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Leyenda */}
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Leyenda</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-red-100 border border-red-300"></div>
+              <span className="text-sm text-gray-600">Tarea Alta</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-yellow-100 border border-yellow-300"></div>
+              <span className="text-sm text-gray-600">Tarea Media</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-green-100 border border-green-300"></div>
+              <span className="text-sm text-gray-600">Tarea Baja</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-blue-100 border border-blue-300"></div>
+              <span className="text-sm text-gray-600">Interacciones</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal de evento */}
+      {selectedEvent && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setSelectedEvent(null)}>
+          <div className="bg-white rounded-xl shadow-2xl p-8 max-w-2xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-gray-900">
+                {selectedEvent.type === 'tarea' ? '📋 Tarea' : `${getTipoIcon(selectedEvent.data.tipo)} Interacción`}
+              </h3>
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X size={28} />
+              </button>
+            </div>
+
+            {selectedEvent.type === 'tarea' ? (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm text-gray-500">Título</p>
+                  <p className="text-xl font-semibold text-gray-900">{selectedEvent.data.titulo}</p>
+                </div>
+                {selectedEvent.data.descripcion && (
+                  <div>
+                    <p className="text-sm text-gray-500">Descripción</p>
+                    <p className="text-gray-900">{selectedEvent.data.descripcion}</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Prioridad</p>
+                    <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${
+                      selectedEvent.data.prioridad === 'alta' ? 'bg-red-100 text-red-800' :
+                      selectedEvent.data.prioridad === 'media' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-green-100 text-green-800'
+                    }`}>
+                      {selectedEvent.data.prioridad.charAt(0).toUpperCase() + selectedEvent.data.prioridad.slice(1)}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Estado</p>
+                    <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${
+                      selectedEvent.data.estado === 'completada' ? 'bg-green-100 text-green-800' :
+                      selectedEvent.data.estado === 'en_progreso' ? 'bg-blue-100 text-blue-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {selectedEvent.data.estado === 'en_progreso' ? 'En Progreso' :
+                       selectedEvent.data.estado === 'completada' ? 'Completada' : 'Pendiente'}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Fecha de Vencimiento</p>
+                  <p className="text-lg text-gray-900">
+                    {new Date(selectedEvent.data.fechaVencimiento).toLocaleDateString('es-MX', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </p>
+                </div>
+                {selectedEvent.data.usuarioId && (
+                  <div>
+                    <p className="text-sm text-gray-500">Asignado a</p>
+                    <p className="text-lg text-gray-900">
+                      {usuarios.find(u => u.id === selectedEvent.data.usuarioId)?.nombre || 'N/A'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Cliente</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {clientes.find(c => c.id === selectedEvent.data.clienteId)?.nombre || 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Usuario</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {usuarios.find(u => u.id === selectedEvent.data.usuarioId)?.nombre || 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Fecha</p>
+                    <p className="text-lg text-gray-900">
+                      {new Date(selectedEvent.data.fecha).toLocaleDateString('es-MX', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  </div>
+                  {selectedEvent.data.hora && (
+                    <div>
+                      <p className="text-sm text-gray-500">Hora</p>
+                      <p className="text-lg text-gray-900">{selectedEvent.data.hora}</p>
+                    </div>
+                  )}
+                </div>
+                {selectedEvent.data.duracion && (
+                  <div>
+                    <p className="text-sm text-gray-500">Duración</p>
+                    <p className="text-lg text-gray-900">{selectedEvent.data.duracion}</p>
+                  </div>
+                )}
+                {selectedEvent.data.notas && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-2">Notas / Resumen</p>
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <p className="text-gray-900 whitespace-pre-wrap">{selectedEvent.data.notas}</p>
+                    </div>
+                  </div>
+                )}
+                {selectedEvent.data.seguimiento && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-2">Seguimiento</p>
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <p className="text-gray-900 whitespace-pre-wrap">{selectedEvent.data.seguimiento}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
