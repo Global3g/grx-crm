@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download, Calendar, ChevronLeft, ChevronRight, Mail, Send } from 'lucide-react';
+import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download, Calendar, ChevronLeft, ChevronRight, Mail, Send, Menu } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from './firebase';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -16,6 +16,7 @@ const exportToExcel = (data, filename) => {
 export default function App() {
   const [currentModule, setCurrentModule] = useState('dashboard');
   const [loading, setLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const modules = [
     { id: 'dashboard', name: 'Dashboard', icon: BarChart3 },
@@ -45,16 +46,37 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen bg-gray-100">
-      <div className="w-64 flex-shrink-0 bg-gradient-to-b from-gray-900 to-gray-800 shadow-lg border-r-4 border-orange-500">
-        <div className="py-8 px-6 border-b-2 border-gray-700">
+    <div className="flex h-screen w-screen bg-gray-100 overflow-hidden">
+      {/* Mobile Menu Button */}
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 bg-orange-500 text-white p-3 rounded-lg shadow-lg hover:bg-orange-600 transition-colors"
+      >
+        <Menu size={24} />
+      </button>
+
+      {/* Overlay for mobile */}
+      {sidebarOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30"
+          onClick={() => setSidebarOpen(false)}
+        ></div>
+      )}
+
+      {/* Sidebar */}
+      <div className={`
+        w-64 flex-shrink-0 bg-gradient-to-b from-gray-900 to-gray-800 shadow-lg border-r-4 border-orange-500
+        fixed lg:static inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        overflow-y-auto
+      `}>
+        <div className="py-4 lg:py-8 px-4 lg:px-6 border-b-2 border-gray-700">
           <div className="flex flex-col items-center justify-center">
             {/* Logo GRX Holdings */}
             <img
               src="/grx-logo.png"
               alt="GRX Holdings"
-              className="h-auto mb-1"
-              style={{width: '240px'}}
+              className="h-auto mb-1 w-40 lg:w-60"
               onError={(e) => {
                 e.target.style.display = 'none';
                 e.target.nextSibling.style.display = 'block';
@@ -62,39 +84,43 @@ export default function App() {
             />
             {/* Fallback si no hay imagen */}
             <div style={{display: 'none'}}>
-              <div className="text-5xl font-black tracking-tight text-white mb-2">
+              <div className="text-3xl lg:text-5xl font-black tracking-tight text-white mb-2">
                 GRX HOLDINGS
               </div>
             </div>
             {/* Badge CRM */}
-            <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-5 py-2 rounded-lg font-bold text-sm tracking-widest shadow-lg">
+            <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-3 lg:px-5 py-1 lg:py-2 rounded-lg font-bold text-xs lg:text-sm tracking-widest shadow-lg">
               CRM SYSTEM
             </div>
           </div>
         </div>
-        <nav className="p-6">
+        <nav className="p-3 lg:p-6">
           {modules.map(module => {
             const Icon = module.icon;
             return (
               <button
                 key={module.id}
-                onClick={() => setCurrentModule(module.id)}
-                className={`w-full flex items-center gap-4 px-6 py-4 rounded-lg mb-3 transition-all ${
+                onClick={() => {
+                  setCurrentModule(module.id);
+                  setSidebarOpen(false); // Close sidebar on mobile after selection
+                }}
+                className={`w-full flex items-center gap-2 lg:gap-4 px-3 lg:px-6 py-2 lg:py-4 rounded-lg mb-2 lg:mb-3 transition-all ${
                   currentModule === module.id
                     ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg'
                     : 'text-gray-300 hover:bg-gray-700 hover:text-white'
                 }`}
               >
-                <Icon size={56} />
-                <span className="text-2xl font-medium">{module.name}</span>
+                <Icon size={20} className="lg:hidden" />
+                <Icon size={56} className="hidden lg:block" />
+                <span className="text-base lg:text-2xl font-medium">{module.name}</span>
               </button>
             );
           })}
         </nav>
       </div>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 bg-gray-100 pl-5">
-        <div className="max-w-[1600px] pr-10 py-10 box-border">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 bg-gray-100 lg:pl-5">
+        <div className="max-w-[1600px] px-4 lg:pr-10 py-16 lg:py-10 box-border">
           {currentModule === 'dashboard' && (
             <DashboardModule />
           )}
