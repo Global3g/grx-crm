@@ -1,0 +1,23 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Reglas por defecto - IMPORTANTE: Ajustar según necesidades de seguridad
+    match /{document=**} {
+      allow read, write: if true; // ⚠️ CAMBIAR EN PRODUCCIÓN
+    }
+
+    // Ejemplo de reglas más seguras (comentadas):
+    // match /empresas/{empresaId} {
+    //   allow read: if request.auth != null;
+    //   allow write: if request.auth != null &&
+    //     request.auth.token.empresaId == empresaId;
+    // }
+
+    // match /usuarios/{usuarioId} {
+    //   allow read: if request.auth != null;
+    //   allow write: if request.auth != null &&
+    //     request.auth.uid == usuarioId;
+    // }
+  }
+}
