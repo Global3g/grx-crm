@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download, Calendar, ChevronLeft, ChevronRight, Mail, Send, Menu } from 'lucide-react';
+import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download, Calendar, ChevronLeft, ChevronRight, Mail, Send, Menu, UserPlus, ArrowRight, DollarSign, Target, Clock, Award, Info, MessageCircle, Bot, Minimize2, GitBranch } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from './firebase';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -13,26 +13,353 @@ const exportToExcel = (data, filename) => {
   XLSX.writeFile(workbook, `${filename}.xlsx`);
 };
 
+// ============= INTELIGENCIA ARTIFICIAL PREDICTIVA =============
+
+// 1. LEAD SCORING - Calcula puntuación de calidad del lead (0-100)
+const calcularLeadScore = (lead, interacciones = []) => {
+  let score = 0;
+
+  // Factor 1: Fuente del lead (0-25 puntos)
+  const puntajeFuente = {
+    'web': 25,
+    'referido': 20,
+    'evento': 18,
+    'redes-sociales': 15,
+    'email-marketing': 12,
+    'llamada-fria': 8,
+    'otro': 5
+  };
+  score += puntajeFuente[lead.fuente] || 10;
+
+  // Factor 2: Tamaño de empresa (0-20 puntos)
+  const empresaSize = lead.empresa?.toLowerCase() || '';
+  if (empresaSize.includes('corp') || empresaSize.includes('group') || empresaSize.includes('holdings')) {
+    score += 20;
+  } else if (lead.telefono && lead.email) {
+    score += 15;
+  } else {
+    score += 10;
+  }
+
+  // Factor 3: Calidad de datos (0-20 puntos)
+  let datosCompletos = 0;
+  if (lead.nombre) datosCompletos += 5;
+  if (lead.email) datosCompletos += 5;
+  if (lead.telefono) datosCompletos += 5;
+  if (lead.empresa) datosCompletos += 5;
+  score += datosCompletos;
+
+  // Factor 4: Frecuencia de interacciones (0-20 puntos)
+  const interaccionesLead = interacciones.filter(i =>
+    i.clienteId === lead.id || i.leadId === lead.id
+  );
+  const numInteracciones = interaccionesLead.length;
+  if (numInteracciones >= 5) score += 20;
+  else if (numInteracciones >= 3) score += 15;
+  else if (numInteracciones >= 1) score += 10;
+  else score += 0;
+
+  // Factor 5: Tiempo de respuesta (0-15 puntos)
+  if (lead.fechaCreacion) {
+    const diasDesdeCreacion = Math.floor(
+      (new Date() - new Date(lead.fechaCreacion)) / (1000 * 60 * 60 * 24)
+    );
+    if (diasDesdeCreacion <= 7) score += 15; // Lead reciente
+    else if (diasDesdeCreacion <= 30) score += 10;
+    else if (diasDesdeCreacion <= 90) score += 5;
+    else score += 0; // Lead muy viejo
+  }
+
+  return Math.min(100, Math.max(0, score));
+};
+
+// 2. PROBABILIDAD DE CIERRE - Calcula % de probabilidad de cerrar una oportunidad
+const calcularProbabilidadCierre = (oportunidad, interacciones = []) => {
+  let probabilidad = 0;
+
+  // Factor 1: Etapa actual (base según pipeline)
+  const probabilidadPorEtapa = {
+    'prospecto': 10,
+    'calificacion': 25,
+    'propuesta': 50,
+    'negociacion': 75,
+    'cierre': 90
+  };
+  probabilidad = probabilidadPorEtapa[oportunidad.etapa] || 20;
+
+  // Factor 2: Valor del deal vs promedio (ajuste -10 a +10)
+  const valorDeal = parseFloat(oportunidad.valor) || 0;
+  if (valorDeal > 100000) probabilidad += 10;
+  else if (valorDeal > 50000) probabilidad += 5;
+  else if (valorDeal < 5000) probabilidad -= 10;
+
+  // Factor 3: Interacciones recientes (+15 si hay actividad)
+  const interaccionesOpp = interacciones.filter(i =>
+    i.oportunidadId === oportunidad.id
+  );
+  const ultimaInteraccion = interaccionesOpp.sort((a, b) =>
+    new Date(b.fecha) - new Date(a.fecha)
+  )[0];
+
+  if (ultimaInteraccion) {
+    const diasDesdeUltimaInteraccion = Math.floor(
+      (new Date() - new Date(ultimaInteraccion.fecha)) / (1000 * 60 * 60 * 24)
+    );
+    if (diasDesdeUltimaInteraccion <= 7) probabilidad += 15;
+    else if (diasDesdeUltimaInteraccion <= 14) probabilidad += 10;
+    else if (diasDesdeUltimaInteraccion > 30) probabilidad -= 15; // Oportunidad fría
+  }
+
+  // Factor 4: Tiempo en etapa actual (deals estancados = menor probabilidad)
+  if (oportunidad.fechaCreacion) {
+    const diasEnEtapa = Math.floor(
+      (new Date() - new Date(oportunidad.fechaCreacion)) / (1000 * 60 * 60 * 24)
+    );
+    if (diasEnEtapa > 90) probabilidad -= 20; // Estancado
+    else if (diasEnEtapa > 60) probabilidad -= 10;
+  }
+
+  return Math.min(100, Math.max(0, probabilidad));
+};
+
+// 3. RIESGO DE CHURN - Identifica clientes en riesgo (0-100, mayor = más riesgo)
+const calcularRiesgoChurn = (cliente, interacciones = []) => {
+  let riesgo = 0;
+
+  // Factor 1: Tiempo desde última interacción (0-40 puntos)
+  const interaccionesCliente = interacciones.filter(i => i.clienteId === cliente.id);
+  const ultimaInteraccion = interaccionesCliente.sort((a, b) =>
+    new Date(b.fecha) - new Date(a.fecha)
+  )[0];
+
+  if (ultimaInteraccion) {
+    const diasSinContacto = Math.floor(
+      (new Date() - new Date(ultimaInteraccion.fecha)) / (1000 * 60 * 60 * 24)
+    );
+    if (diasSinContacto > 90) riesgo += 40;
+    else if (diasSinContacto > 60) riesgo += 30;
+    else if (diasSinContacto > 30) riesgo += 15;
+  } else {
+    riesgo += 35; // Sin interacciones registradas = alto riesgo
+  }
+
+  // Factor 2: Tendencia de interacciones (comparar últimos 30 vs 60 días)
+  const hace30dias = new Date();
+  hace30dias.setDate(hace30dias.getDate() - 30);
+  const hace60dias = new Date();
+  hace60dias.setDate(hace60dias.getDate() - 60);
+
+  const interaccionesRecientes = interaccionesCliente.filter(i =>
+    new Date(i.fecha) >= hace30dias
+  ).length;
+  const interaccionesAnteriores = interaccionesCliente.filter(i =>
+    new Date(i.fecha) >= hace60dias && new Date(i.fecha) < hace30dias
+  ).length;
+
+  if (interaccionesRecientes < interaccionesAnteriores) {
+    riesgo += 25; // Tendencia descendente en engagement
+  }
+
+  // Factor 3: Estado del cliente
+  if (cliente.estado === 'inactivo') riesgo += 20;
+  else if (cliente.estado === 'activo') riesgo -= 10;
+
+  // Factor 4: Tipo de interacciones negativas
+  const interaccionesNegativas = interaccionesCliente.filter(i =>
+    i.tipo === 'queja' || i.notas?.toLowerCase().includes('problema') ||
+    i.notas?.toLowerCase().includes('cancelar') || i.notas?.toLowerCase().includes('insatisfecho')
+  );
+  if (interaccionesNegativas.length > 0) {
+    riesgo += 15 * Math.min(interaccionesNegativas.length, 3);
+  }
+
+  return Math.min(100, Math.max(0, riesgo));
+};
+
+// 4. SIGUIENTE MEJOR ACCIÓN - Recomienda qué hacer con un lead/oportunidad
+const recomendarSiguienteAccion = (item, tipo, interacciones = []) => {
+  const interaccionesItem = interacciones.filter(i =>
+    i.leadId === item.id || i.oportunidadId === item.id || i.clienteId === item.id
+  );
+
+  const ultimaInteraccion = interaccionesItem.sort((a, b) =>
+    new Date(b.fecha) - new Date(a.fecha)
+  )[0];
+
+  const diasSinContacto = ultimaInteraccion ? Math.floor(
+    (new Date() - new Date(ultimaInteraccion.fecha)) / (1000 * 60 * 60 * 24)
+  ) : 999;
+
+  // Leads
+  if (tipo === 'lead') {
+    const score = calcularLeadScore(item, interacciones);
+
+    if (score >= 70) {
+      return {
+        accion: 'Llamar urgente',
+        icono: '📞',
+        prioridad: 'alta',
+        razon: 'Lead de alta calidad - Contactar dentro de 24 horas'
+      };
+    } else if (score >= 40) {
+      if (diasSinContacto > 7) {
+        return {
+          accion: 'Enviar email de seguimiento',
+          icono: '✉️',
+          prioridad: 'media',
+          razon: 'Lead caliente sin contacto reciente'
+        };
+      } else {
+        return {
+          accion: 'Agendar llamada',
+          icono: '📅',
+          prioridad: 'media',
+          razon: 'Continuar proceso de calificación'
+        };
+      }
+    } else {
+      return {
+        accion: 'Agregar a campaña de nurturing',
+        icono: '📧',
+        prioridad: 'baja',
+        razon: 'Lead frío - Mantener comunicación automatizada'
+      };
+    }
+  }
+
+  // Oportunidades
+  if (tipo === 'oportunidad') {
+    const probabilidad = calcularProbabilidadCierre(item, interacciones);
+
+    if (item.etapa === 'negociacion' && probabilidad >= 70) {
+      return {
+        accion: 'Enviar propuesta final',
+        icono: '📄',
+        prioridad: 'alta',
+        razon: 'Alta probabilidad de cierre - Push final'
+      };
+    } else if (diasSinContacto > 14) {
+      return {
+        accion: 'Reactivar oportunidad',
+        icono: '🔥',
+        prioridad: 'alta',
+        razon: 'Oportunidad estancada - Urgente reactivar'
+      };
+    } else if (item.etapa === 'propuesta') {
+      return {
+        accion: 'Reunión de seguimiento',
+        icono: '👥',
+        prioridad: 'media',
+        razon: 'Avanzar propuesta a negociación'
+      };
+    } else {
+      return {
+        accion: 'Enviar contenido educativo',
+        icono: '📚',
+        prioridad: 'baja',
+        razon: 'Nutrir oportunidad en etapa temprana'
+      };
+    }
+  }
+
+  // Clientes
+  if (tipo === 'cliente') {
+    const riesgo = calcularRiesgoChurn(item, interacciones);
+
+    if (riesgo >= 70) {
+      return {
+        accion: 'Llamada de retención URGENTE',
+        icono: '🚨',
+        prioridad: 'alta',
+        razon: 'Cliente en alto riesgo de pérdida'
+      };
+    } else if (riesgo >= 40) {
+      return {
+        accion: 'Check-in proactivo',
+        icono: '💬',
+        prioridad: 'media',
+        razon: 'Prevenir churn - Verificar satisfacción'
+      };
+    } else if (diasSinContacto > 45) {
+      return {
+        accion: 'Email de valor agregado',
+        icono: '💎',
+        prioridad: 'media',
+        razon: 'Mantener engagement con contenido útil'
+      };
+    } else {
+      return {
+        accion: 'Oportunidad de upsell',
+        icono: '⬆️',
+        prioridad: 'baja',
+        razon: 'Cliente saludable - Explorar venta cruzada'
+      };
+    }
+  }
+
+  return {
+    accion: 'Revisar manualmente',
+    icono: '🔍',
+    prioridad: 'baja',
+    razon: 'Sin suficiente información para recomendación'
+  };
+};
+
 export default function App() {
   const [currentModule, setCurrentModule] = useState('dashboard');
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null); // Usuario autenticado
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const modules = [
     { id: 'dashboard', name: 'Dashboard', icon: BarChart3 },
-    { id: 'empresas', name: 'Empresas', icon: Building2 },
-    { id: 'usuarios', name: 'Usuarios', icon: Users },
+    { id: 'leads', name: 'Leads', icon: UserPlus },
+    { id: 'oportunidades', name: 'Pipeline', icon: TrendingUp },
     { id: 'clientes', name: 'Clientes', icon: UserCircle },
+    { id: 'productos', name: 'Productos', icon: DollarSign },
+    { id: 'cotizaciones', name: 'Cotizaciones', icon: Target },
     { id: 'interacciones', name: 'Interacciones', icon: Phone },
     { id: 'tareas', name: 'Tareas', icon: ClipboardList },
     { id: 'calendario', name: 'Calendario', icon: Calendar },
     { id: 'proyectos', name: 'Proyectos', icon: Briefcase },
-    { id: 'oportunidades', name: 'Oportunidades', icon: TrendingUp },
+    { id: 'empresas', name: 'Empresas', icon: Building2 },
+    { id: 'usuarios', name: 'Usuarios', icon: Users },
     { id: 'reportes', name: 'Reportes', icon: BarChart3 },
     { id: 'notificaciones', name: 'Notificaciones', icon: Bell },
     { id: 'integraciones', name: 'Integraciones', icon: Plug },
+    { id: 'workflows', name: 'Workflows', icon: GitBranch },
     { id: 'config', name: 'Configuración', icon: Settings },
   ];
+
+  // Manejo de autenticación
+  const handleLogin = (usuario) => {
+    setCurrentUser(usuario);
+    setIsAuthenticated(true);
+    localStorage.setItem('currentUser', JSON.stringify(usuario));
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    localStorage.removeItem('currentUser');
+    setCurrentModule('dashboard');
+  };
+
+  // Verificar sesión al cargar
+  useEffect(() => {
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+      try {
+        const user = JSON.parse(savedUser);
+        setCurrentUser(user);
+        setIsAuthenticated(true);
+      } catch (e) {
+        console.error('Error parsing saved user:', e);
+        localStorage.removeItem('currentUser');
+      }
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -43,6 +370,11 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  // Mostrar Login si no está autenticado
+  if (!isAuthenticated) {
+    return <LoginModule onLogin={handleLogin} />;
   }
 
   return (
@@ -94,7 +426,7 @@ export default function App() {
             </div>
           </div>
         </div>
-        <nav className="p-3 lg:p-6">
+        <nav className="p-3 lg:p-6 pb-40">
           {modules.map(module => {
             const Icon = module.icon;
             return (
@@ -117,51 +449,98 @@ export default function App() {
             );
           })}
         </nav>
+
+        {/* User Info y Logout */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t-2 border-gray-700 bg-gray-900">
+          <div className="bg-gray-800 rounded-lg p-3 mb-3">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-full w-10 h-10 flex items-center justify-center text-white font-bold">
+                {currentUser?.nombre?.charAt(0)?.toUpperCase() || 'U'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold text-sm truncate">{currentUser?.nombre || 'Usuario'}</p>
+                <p className="text-gray-400 text-xs truncate">{currentUser?.email}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className={`text-xs px-2 py-1 rounded font-semibold ${
+                currentUser?.rol === 'administrador' ? 'bg-purple-100 text-purple-800' :
+                currentUser?.rol === 'gerente' ? 'bg-blue-100 text-blue-800' :
+                currentUser?.rol === 'ejecutivo' ? 'bg-green-100 text-green-800' :
+                'bg-gray-100 text-gray-800'
+              }`}>
+                {currentUser?.rol?.toUpperCase() || 'USUARIO'}
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg font-semibold transition-colors"
+          >
+            <LogIn size={18} className="rotate-180" />
+            <span>Cerrar Sesión</span>
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 bg-gray-100 lg:pl-5">
         <div className="max-w-[1600px] px-4 lg:pr-10 py-16 lg:py-10 box-border">
           {currentModule === 'dashboard' && (
-            <DashboardModule />
+            <DashboardModule currentUser={currentUser} />
           )}
           {currentModule === 'empresas' && (
-            <EmpresasModule />
+            <EmpresasModule currentUser={currentUser} />
           )}
           {currentModule === 'usuarios' && (
-            <UsuariosModule />
+            <UsuariosModule currentUser={currentUser} />
+          )}
+          {currentModule === 'leads' && (
+            <LeadsModule currentUser={currentUser} />
           )}
           {currentModule === 'clientes' && (
-            <ClientesModule />
+            <ClientesModule currentUser={currentUser} />
           )}
           {currentModule === 'interacciones' && (
-            <InteraccionesModule />
+            <InteraccionesModule currentUser={currentUser} />
           )}
           {currentModule === 'tareas' && (
-            <TareasModule />
+            <TareasModule currentUser={currentUser} />
           )}
           {currentModule === 'calendario' && (
-            <CalendarioModule />
+            <CalendarioModule currentUser={currentUser} />
           )}
           {currentModule === 'proyectos' && (
-            <ProyectosModule />
+            <ProyectosModule currentUser={currentUser} />
           )}
           {currentModule === 'oportunidades' && (
-            <OportunidadesModule />
+            <OportunidadesModule currentUser={currentUser} />
+          )}
+          {currentModule === 'productos' && (
+            <ProductosModule currentUser={currentUser} />
+          )}
+          {currentModule === 'cotizaciones' && (
+            <CotizacionesModule currentUser={currentUser} />
           )}
           {currentModule === 'reportes' && (
-            <ReportesModule />
+            <ReportesModule currentUser={currentUser} />
           )}
           {currentModule === 'notificaciones' && (
-            <NotificacionesModule />
+            <NotificacionesModule currentUser={currentUser} />
           )}
           {currentModule === 'integraciones' && (
-            <IntegracionesModule />
+            <IntegracionesModule currentUser={currentUser} />
+          )}
+          {currentModule === 'workflows' && (
+            <WorkflowsModule currentUser={currentUser} />
           )}
           {currentModule === 'config' && (
-            <ConfigModule />
+            <ConfigModule currentUser={currentUser} />
           )}
         </div>
       </div>
+
+      {/* Chatbot IA Flotante */}
+      <AIChatbot />
     </div>
   );
 }
@@ -170,15 +549,35 @@ export default function App() {
 function DashboardModule() {
   const [stats, setStats] = useState({
     totalEmpresas: 0,
+    totalLeads: 0,
+    leadsCalificados: 0,
+    leadsConvertidos: 0,
     totalClientes: 0,
     totalOportunidades: 0,
+    oportunidadesGanadas: 0,
     totalTareas: 0,
     tareasPendientes: 0,
-    valorPipeline: 0
+    valorPipeline: 0,
+    valorCerrado: 0,
+    tasaConversion: 0
   });
   const [oportunidadesPorEtapa, setOportunidadesPorEtapa] = useState([]);
   const [interaccionesRecientes, setInteraccionesRecientes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [alertas, setAlertas] = useState({
+    leadsAbandonados: [],
+    oportunidadesEstancadas: [],
+    tareasVencidas: [],
+    propuestasSinRespuesta: []
+  });
+  const [kpisAvanzados, setKpisAvanzados] = useState({
+    conversionLeadOportunidad: 0,
+    conversionOportunidadCliente: 0,
+    cicloPromedioVenta: 0,
+    valorPromedioOportunidad: 0,
+    tasaCierreExito: 0,
+    oportunidadesActivasPromedio: 0
+  });
 
   useEffect(() => {
     loadDashboardData();
@@ -187,8 +586,9 @@ function DashboardModule() {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const [empresasSnap, clientesSnap, oportunidadesSnap, tareasSnap, interaccionesSnap, usuariosSnap] = await Promise.all([
+      const [empresasSnap, leadsSnap, clientesSnap, oportunidadesSnap, tareasSnap, interaccionesSnap, usuariosSnap] = await Promise.all([
         getDocs(collection(db, 'empresas')),
+        getDocs(collection(db, 'leads')),
         getDocs(collection(db, 'clientes')),
         getDocs(collection(db, 'oportunidades')),
         getDocs(collection(db, 'tareas')),
@@ -196,20 +596,36 @@ function DashboardModule() {
         getDocs(collection(db, 'usuarios'))
       ]);
 
+      const leads = leadsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       const oportunidades = oportunidadesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       const tareas = tareasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       const interacciones = interaccionesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       const clientes = clientesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       const usuarios = usuariosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
+      const leadsCalificados = leads.filter(l => l.estado === 'calificado').length;
+      const leadsConvertidos = leads.filter(l => l.estado === 'convertido').length;
+      const oportunidadesGanadas = oportunidades.filter(o => o.etapa === 'Cerrado Ganado').length;
+      const valorCerrado = oportunidades
+        .filter(o => o.etapa === 'Cerrado Ganado')
+        .reduce((sum, o) => sum + (parseFloat(o.valor) || 0), 0);
+
+      const tasaConversion = leads.length > 0 ? ((leadsConvertidos / leads.length) * 100).toFixed(1) : 0;
+
       // Calcular stats
       setStats({
         totalEmpresas: empresasSnap.size,
+        totalLeads: leads.length,
+        leadsCalificados,
+        leadsConvertidos,
         totalClientes: clientesSnap.size,
         totalOportunidades: oportunidadesSnap.size,
+        oportunidadesGanadas,
         totalTareas: tareasSnap.size,
         tareasPendientes: tareas.filter(t => t.estado === 'pendiente').length,
-        valorPipeline: oportunidades.reduce((sum, o) => sum + (parseFloat(o.valor) || 0), 0)
+        valorPipeline: oportunidades.reduce((sum, o) => sum + (parseFloat(o.valor) || 0), 0),
+        valorCerrado,
+        tasaConversion
       });
 
       // Agrupar oportunidades por etapa
@@ -223,6 +639,91 @@ function DashboardModule() {
         };
       });
       setOportunidadesPorEtapa(oportunidadesAgrupadas);
+
+      // SISTEMA DE ALERTAS AUTOMÁTICAS
+      const ahora = new Date();
+
+      // 1. Leads sin contactar >3 días (CRÍTICO)
+      const leadsAbandonados = leads.filter(lead => {
+        if (lead.estado === 'convertido' || lead.estado === 'descalificado') return false;
+        const fechaCreacion = new Date(lead.fechaCreacion);
+        const diasDesdeCreacion = (ahora - fechaCreacion) / (1000 * 60 * 60 * 24);
+        return diasDesdeCreacion > 3;
+      });
+
+      // 2. Oportunidades estancadas >30 días sin movimiento (ATENCIÓN)
+      const oportunidadesEstancadas = oportunidades.filter(op => {
+        if (op.etapa === 'Cerrado Ganado' || op.etapa === 'Cerrado Perdido') return false;
+        const fechaCreacion = new Date(op.fechaCreacion);
+        const diasDesdeCreacion = (ahora - fechaCreacion) / (1000 * 60 * 60 * 24);
+        return diasDesdeCreacion > 30;
+      });
+
+      // 3. Tareas vencidas (URGENTE)
+      const tareasVencidas = tareas.filter(tarea => {
+        if (tarea.estado === 'completada') return false;
+        if (!tarea.fechaVencimiento) return false;
+        const fechaVenc = new Date(tarea.fechaVencimiento);
+        return ahora > fechaVenc;
+      });
+
+      // 4. Propuestas >15 días sin respuesta (SEGUIMIENTO)
+      const propuestasSinRespuesta = oportunidades.filter(op => {
+        if (op.etapa !== 'Propuesta Enviada') return false;
+        const fechaCreacion = new Date(op.fechaCreacion);
+        const diasDesdeEnvio = (ahora - fechaCreacion) / (1000 * 60 * 60 * 24);
+        return diasDesdeEnvio > 15;
+      });
+
+      setAlertas({
+        leadsAbandonados,
+        oportunidadesEstancadas,
+        tareasVencidas,
+        propuestasSinRespuesta
+      });
+
+      // CÁLCULO DE KPIs AVANZADOS
+      // 1. Tasa de conversión Lead → Oportunidad (reutilizando leadsConvertidos ya calculado)
+      const totalLeads = leads.length;
+      const conversionLeadOportunidad = totalLeads > 0 ? ((leadsConvertidos / totalLeads) * 100).toFixed(1) : 0;
+
+      // 2. Tasa de conversión Oportunidad → Cliente (reutilizando oportunidadesGanadas ya calculado)
+      const totalOportunidades = oportunidades.length;
+      const conversionOportunidadCliente = totalOportunidades > 0 ? ((oportunidadesGanadas / totalOportunidades) * 100).toFixed(1) : 0;
+
+      // 3. Ciclo promedio de venta (días desde creación de oportunidad hasta cierre)
+      const oportunidadesCerradas = oportunidades.filter(o => o.etapa === 'Cerrado Ganado' || o.etapa === 'Cerrado Perdido');
+      let cicloPromedioVenta = 0;
+      if (oportunidadesCerradas.length > 0) {
+        const totalDias = oportunidadesCerradas.reduce((acc, op) => {
+          const fechaCreacion = new Date(op.fechaCreacion);
+          const fechaCierre = op.fechaCierre ? new Date(op.fechaCierre) : new Date();
+          const dias = (fechaCierre - fechaCreacion) / (1000 * 60 * 60 * 24);
+          return acc + dias;
+        }, 0);
+        cicloPromedioVenta = Math.round(totalDias / oportunidadesCerradas.length);
+      }
+
+      // 4. Valor promedio de oportunidad
+      const valorTotalOportunidades = oportunidades.reduce((acc, op) => acc + (parseFloat(op.valor) || 0), 0);
+      const valorPromedioOportunidad = totalOportunidades > 0 ? (valorTotalOportunidades / totalOportunidades) : 0;
+
+      // 5. Tasa de cierre exitoso (Ganadas / Total Cerradas)
+      const oportunidadesPerdidas = oportunidades.filter(o => o.etapa === 'Cerrado Perdido').length;
+      const totalCerradas = oportunidadesGanadas + oportunidadesPerdidas;
+      const tasaCierreExito = totalCerradas > 0 ? ((oportunidadesGanadas / totalCerradas) * 100).toFixed(1) : 0;
+
+      // 6. Promedio de oportunidades activas (no cerradas)
+      const oportunidadesActivas = oportunidades.filter(o => o.etapa !== 'Cerrado Ganado' && o.etapa !== 'Cerrado Perdido').length;
+
+      setKpisAvanzados({
+        conversionLeadOportunidad,
+        conversionOportunidadCliente,
+        cicloPromedioVenta,
+        valorPromedioOportunidad,
+        tasaCierreExito,
+        oportunidadesActivasPromedio: oportunidadesActivas
+      });
 
       // Últimas 5 interacciones
       const interaccionesConDatos = interacciones
@@ -306,6 +807,405 @@ function DashboardModule() {
               <p className="text-orange-100 text-xs mt-1">de {stats.totalTareas} totales</p>
             </div>
             <ClipboardList className="w-16 h-16 text-orange-200" />
+          </div>
+        </div>
+      </div>
+
+      {/* EMBUDO DE VENTAS INTEGRADO */}
+      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl shadow-lg p-8 mb-8 border-2 border-orange-500">
+        <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
+          <TrendingUp size={32} className="text-orange-600" />
+          Embudo de Ventas Integrado - Flujo Completo
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          {/* LEADS */}
+          <div className="bg-white rounded-lg p-6 shadow-md border-l-4 border-blue-500 hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-between mb-4">
+              <UserPlus className="text-blue-600" size={32} />
+              <ArrowRight className="text-gray-300" size={24} />
+            </div>
+            <h4 className="text-lg font-bold text-gray-900 mb-2">1. LEADS</h4>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Total:</span>
+                <span className="text-2xl font-bold text-blue-600">{stats.totalLeads}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-500">Calificados:</span>
+                <span className="text-sm font-semibold text-green-600">{stats.leadsCalificados}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-500">Convertidos:</span>
+                <span className="text-sm font-semibold text-purple-600">{stats.leadsConvertidos}</span>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <p className="text-xs text-gray-500">Tasa de conversión</p>
+              <p className="text-lg font-bold text-blue-600">{stats.tasaConversion}%</p>
+            </div>
+          </div>
+
+          {/* OPORTUNIDADES */}
+          <div className="bg-white rounded-lg p-6 shadow-md border-l-4 border-green-500 hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-between mb-4">
+              <DollarSign className="text-green-600" size={32} />
+              <ArrowRight className="text-gray-300" size={24} />
+            </div>
+            <h4 className="text-lg font-bold text-gray-900 mb-2">2. OPORTUNIDADES</h4>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Total:</span>
+                <span className="text-2xl font-bold text-green-600">{stats.totalOportunidades}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-500">Ganadas:</span>
+                <span className="text-sm font-semibold text-green-600">{stats.oportunidadesGanadas}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-500">Pipeline:</span>
+                <span className="text-sm font-semibold text-blue-600">{stats.totalOportunidades - stats.oportunidadesGanadas}</span>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <p className="text-xs text-gray-500">Valor pipeline</p>
+              <p className="text-sm font-bold text-green-600">{formatCurrency(stats.valorPipeline)}</p>
+            </div>
+          </div>
+
+          {/* CLIENTES */}
+          <div className="bg-white rounded-lg p-6 shadow-md border-l-4 border-purple-500 hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-between mb-4">
+              <UserCircle className="text-purple-600" size={32} />
+              <ArrowRight className="text-gray-300" size={24} />
+            </div>
+            <h4 className="text-lg font-bold text-gray-900 mb-2">3. CLIENTES</h4>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Total:</span>
+                <span className="text-2xl font-bold text-purple-600">{stats.totalClientes}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-500">Desde oportunidades:</span>
+                <span className="text-sm font-semibold text-green-600">{stats.oportunidadesGanadas}</span>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <p className="text-xs text-gray-500">Valor cerrado</p>
+              <p className="text-sm font-bold text-purple-600">{formatCurrency(stats.valorCerrado)}</p>
+            </div>
+          </div>
+
+          {/* RESUMEN */}
+          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg p-6 shadow-md text-white hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-center mb-4">
+              <Target className="text-white" size={32} />
+            </div>
+            <h4 className="text-lg font-bold mb-4 text-center">RESUMEN</h4>
+            <div className="space-y-3">
+              <div className="bg-white bg-opacity-20 rounded p-2">
+                <p className="text-xs text-orange-100">Tareas pendientes</p>
+                <p className="text-2xl font-bold">{stats.tareasPendientes}</p>
+              </div>
+              <div className="bg-white bg-opacity-20 rounded p-2">
+                <p className="text-xs text-orange-100">Total empresas</p>
+                <p className="text-xl font-bold">{stats.totalEmpresas}</p>
+              </div>
+              <div className="bg-white bg-opacity-20 rounded p-2">
+                <p className="text-xs text-orange-100">Conversión leads</p>
+                <p className="text-xl font-bold">{stats.tasaConversion}%</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Flujo visual */}
+        <div className="bg-white rounded-lg p-6 shadow-inner">
+          <h4 className="text-center text-sm font-semibold text-gray-600 mb-4">Proceso de Conversión</h4>
+          <div className="flex items-center justify-center gap-4">
+            <div className="text-center">
+              <div className="bg-blue-100 rounded-full w-16 h-16 flex items-center justify-center mb-2">
+                <UserPlus className="text-blue-600" size={32} />
+              </div>
+              <p className="text-xs font-semibold text-gray-700">Lead</p>
+              <p className="text-xs text-gray-500">Captura</p>
+            </div>
+
+            <ArrowRight className="text-gray-400" size={24} />
+
+            <div className="text-center">
+              <div className="bg-yellow-100 rounded-full w-16 h-16 flex items-center justify-center mb-2">
+                <Target className="text-yellow-600" size={32} />
+              </div>
+              <p className="text-xs font-semibold text-gray-700">Calificación</p>
+              <p className="text-xs text-gray-500">BANT Scoring</p>
+            </div>
+
+            <ArrowRight className="text-gray-400" size={24} />
+
+            <div className="text-center">
+              <div className="bg-green-100 rounded-full w-16 h-16 flex items-center justify-center mb-2">
+                <DollarSign className="text-green-600" size={32} />
+              </div>
+              <p className="text-xs font-semibold text-gray-700">Oportunidad</p>
+              <p className="text-xs text-gray-500">Pipeline</p>
+            </div>
+
+            <ArrowRight className="text-gray-400" size={24} />
+
+            <div className="text-center">
+              <div className="bg-orange-100 rounded-full w-16 h-16 flex items-center justify-center mb-2">
+                <TrendingUp className="text-orange-600" size={32} />
+              </div>
+              <p className="text-xs font-semibold text-gray-700">Negociación</p>
+              <p className="text-xs text-gray-500">Propuesta</p>
+            </div>
+
+            <ArrowRight className="text-gray-400" size={24} />
+
+            <div className="text-center">
+              <div className="bg-purple-100 rounded-full w-16 h-16 flex items-center justify-center mb-2">
+                <UserCircle className="text-purple-600" size={32} />
+              </div>
+              <p className="text-xs font-semibold text-gray-700">Cliente</p>
+              <p className="text-xs text-gray-500">Cerrado</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SISTEMA DE ALERTAS AUTOMÁTICAS */}
+      <div className="bg-white rounded-xl shadow-lg p-6 mb-8 border-l-4 border-red-500">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+            <Bell size={28} className="text-red-600" />
+            Alertas Automáticas
+            <span className="text-sm bg-red-100 text-red-800 px-3 py-1 rounded-full font-semibold">
+              {alertas.leadsAbandonados.length + alertas.oportunidadesEstancadas.length +
+               alertas.tareasVencidas.length + alertas.propuestasSinRespuesta.length} Total
+            </span>
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Leads abandonados */}
+          <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-red-600 rounded-full p-2">
+                <UserPlus className="text-white" size={20} />
+              </div>
+              <span className="text-3xl font-bold text-red-600">{alertas.leadsAbandonados.length}</span>
+            </div>
+            <h4 className="font-bold text-red-900 mb-1">🔴 Leads Abandonados</h4>
+            <p className="text-xs text-red-700">Sin contactar >3 días</p>
+            {alertas.leadsAbandonados.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-red-200">
+                <p className="text-xs text-red-600 font-semibold">Requiere acción URGENTE</p>
+                {alertas.leadsAbandonados.slice(0, 2).map(lead => (
+                  <p key={lead.id} className="text-xs text-red-700 truncate">• {lead.nombre}</p>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Tareas vencidas */}
+          <div className="bg-orange-50 border-2 border-orange-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-orange-600 rounded-full p-2">
+                <ClipboardList className="text-white" size={20} />
+              </div>
+              <span className="text-3xl font-bold text-orange-600">{alertas.tareasVencidas.length}</span>
+            </div>
+            <h4 className="font-bold text-orange-900 mb-1">🟠 Tareas Vencidas</h4>
+            <p className="text-xs text-orange-700">Fecha límite superada</p>
+            {alertas.tareasVencidas.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-orange-200">
+                <p className="text-xs text-orange-600 font-semibold">Requiere atención inmediata</p>
+                {alertas.tareasVencidas.slice(0, 2).map(tarea => (
+                  <p key={tarea.id} className="text-xs text-orange-700 truncate">• {tarea.titulo}</p>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Oportunidades estancadas */}
+          <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-yellow-600 rounded-full p-2">
+                <TrendingUp className="text-white" size={20} />
+              </div>
+              <span className="text-3xl font-bold text-yellow-600">{alertas.oportunidadesEstancadas.length}</span>
+            </div>
+            <h4 className="font-bold text-yellow-900 mb-1">🟡 Oportunidades Estancadas</h4>
+            <p className="text-xs text-yellow-700">Sin actividad >30 días</p>
+            {alertas.oportunidadesEstancadas.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-yellow-200">
+                <p className="text-xs text-yellow-600 font-semibold">Requiere seguimiento</p>
+                {alertas.oportunidadesEstancadas.slice(0, 2).map(op => (
+                  <p key={op.id} className="text-xs text-yellow-700 truncate">• {op.nombre}</p>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Propuestas sin respuesta */}
+          <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-blue-600 rounded-full p-2">
+                <Mail className="text-white" size={20} />
+              </div>
+              <span className="text-3xl font-bold text-blue-600">{alertas.propuestasSinRespuesta.length}</span>
+            </div>
+            <h4 className="font-bold text-blue-900 mb-1">🔵 Propuestas Pendientes</h4>
+            <p className="text-xs text-blue-700">Sin respuesta >15 días</p>
+            {alertas.propuestasSinRespuesta.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-blue-200">
+                <p className="text-xs text-blue-600 font-semibold">Hacer seguimiento</p>
+                {alertas.propuestasSinRespuesta.slice(0, 2).map(op => (
+                  <p key={op.id} className="text-xs text-blue-700 truncate">• {op.nombre}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Mensaje cuando no hay alertas */}
+        {(alertas.leadsAbandonados.length + alertas.oportunidadesEstancadas.length +
+          alertas.tareasVencidas.length + alertas.propuestasSinRespuesta.length) === 0 && (
+          <div className="text-center py-8 bg-green-50 rounded-lg mt-4">
+            <div className="text-6xl mb-3">✅</div>
+            <p className="text-xl font-bold text-green-800">¡Todo bajo control!</p>
+            <p className="text-green-600">No hay alertas pendientes en este momento</p>
+          </div>
+        )}
+      </div>
+
+      {/* KPIs AVANZADOS - MÉTRICAS DE RENDIMIENTO */}
+      <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl shadow-lg p-8 mb-8 border-2 border-purple-500">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+            <TrendingUp size={28} className="text-purple-600" />
+            KPIs de Rendimiento - Métricas Clave
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* KPI 1: Conversión Lead → Oportunidad */}
+          <div className="bg-white rounded-lg p-6 shadow-md hover:shadow-xl transition-shadow border-t-4 border-blue-500">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-blue-100 rounded-full p-3">
+                <UserPlus className="text-blue-600" size={24} />
+              </div>
+              <span className="text-3xl font-bold text-blue-600">{kpisAvanzados.conversionLeadOportunidad}%</span>
+            </div>
+            <h4 className="font-semibold text-gray-900 mb-1">Lead → Oportunidad</h4>
+            <p className="text-sm text-gray-600">Tasa de conversión de leads calificados</p>
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>📊 Métrica de Calificación</span>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI 2: Conversión Oportunidad → Cliente */}
+          <div className="bg-white rounded-lg p-6 shadow-md hover:shadow-xl transition-shadow border-t-4 border-green-500">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-green-100 rounded-full p-3">
+                <Target className="text-green-600" size={24} />
+              </div>
+              <span className="text-3xl font-bold text-green-600">{kpisAvanzados.conversionOportunidadCliente}%</span>
+            </div>
+            <h4 className="font-semibold text-gray-900 mb-1">Oportunidad → Cliente</h4>
+            <p className="text-sm text-gray-600">Tasa de cierre de oportunidades</p>
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>🎯 Métrica de Efectividad</span>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI 3: Ciclo Promedio de Venta */}
+          <div className="bg-white rounded-lg p-6 shadow-md hover:shadow-xl transition-shadow border-t-4 border-orange-500">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-orange-100 rounded-full p-3">
+                <Clock className="text-orange-600" size={24} />
+              </div>
+              <span className="text-3xl font-bold text-orange-600">{kpisAvanzados.cicloPromedioVenta}</span>
+            </div>
+            <h4 className="font-semibold text-gray-900 mb-1">Ciclo de Venta</h4>
+            <p className="text-sm text-gray-600">Días promedio hasta cierre</p>
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>⏱️ Métrica de Velocidad</span>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI 4: Valor Promedio de Oportunidad */}
+          <div className="bg-white rounded-lg p-6 shadow-md hover:shadow-xl transition-shadow border-t-4 border-purple-500">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-purple-100 rounded-full p-3">
+                <DollarSign className="text-purple-600" size={24} />
+              </div>
+              <span className="text-2xl font-bold text-purple-600">{formatCurrency(kpisAvanzados.valorPromedioOportunidad)}</span>
+            </div>
+            <h4 className="font-semibold text-gray-900 mb-1">Valor Promedio</h4>
+            <p className="text-sm text-gray-600">Valor medio por oportunidad</p>
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>💰 Métrica de Ticket</span>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI 5: Tasa de Cierre Exitoso */}
+          <div className="bg-white rounded-lg p-6 shadow-md hover:shadow-xl transition-shadow border-t-4 border-pink-500">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-pink-100 rounded-full p-3">
+                <Award className="text-pink-600" size={24} />
+              </div>
+              <span className="text-3xl font-bold text-pink-600">{kpisAvanzados.tasaCierreExito}%</span>
+            </div>
+            <h4 className="font-semibold text-gray-900 mb-1">Tasa de Éxito</h4>
+            <p className="text-sm text-gray-600">% de cierres ganados vs perdidos</p>
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>🏆 Métrica de Calidad</span>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI 6: Oportunidades Activas */}
+          <div className="bg-white rounded-lg p-6 shadow-md hover:shadow-xl transition-shadow border-t-4 border-indigo-500">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-indigo-100 rounded-full p-3">
+                <Briefcase className="text-indigo-600" size={24} />
+              </div>
+              <span className="text-3xl font-bold text-indigo-600">{kpisAvanzados.oportunidadesActivasPromedio}</span>
+            </div>
+            <h4 className="font-semibold text-gray-900 mb-1">Oportunidades Activas</h4>
+            <p className="text-sm text-gray-600">En proceso (no cerradas)</p>
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>📈 Métrica de Pipeline</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Interpretación de métricas */}
+        <div className="mt-6 bg-white rounded-lg p-4 border-l-4 border-purple-500">
+          <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+            <Info size={18} className="text-purple-600" />
+            Interpretación de Métricas
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-600">
+            <div>• <strong>Conversión Lead→Oportunidad alta:</strong> Buena calificación inicial</div>
+            <div>• <strong>Conversión Oportunidad→Cliente alta:</strong> Proceso de venta efectivo</div>
+            <div>• <strong>Ciclo de venta corto:</strong> Proceso ágil y eficiente</div>
+            <div>• <strong>Valor promedio alto:</strong> Clientes de mayor potencial</div>
+            <div>• <strong>Tasa de éxito alta:</strong> Enfoque en oportunidades correctas</div>
+            <div>• <strong>Pipeline activo equilibrado:</strong> Flujo de ventas saludable</div>
           </div>
         </div>
       </div>
@@ -912,7 +1812,23 @@ function UsuariosModule() {
     telefono: '',
     rol: 'ejecutivo',
     empresaId: '',
-    activo: true
+    equipoId: '',
+    password: '',
+    activo: true,
+    permisos: {
+      dashboard: { ver: true },
+      leads: { ver: true, crear: true, editar: 'propios', eliminar: false },
+      oportunidades: { ver: true, crear: true, editar: 'propios', eliminar: false },
+      clientes: { ver: true, crear: true, editar: 'propios', eliminar: false },
+      interacciones: { ver: true, crear: true, editar: 'propios', eliminar: false },
+      tareas: { ver: true, crear: true, editar: 'propios', eliminar: false },
+      calendario: { ver: true },
+      proyectos: { ver: true, crear: false, editar: false, eliminar: false },
+      empresas: { ver: false, crear: false, editar: false, eliminar: false },
+      usuarios: { ver: false, crear: false, editar: false, eliminar: false },
+      reportes: { ver: true },
+      configuracion: { ver: false, editar: false }
+    }
   });
 
   const roles = [
@@ -921,6 +1837,74 @@ function UsuariosModule() {
     { value: 'ejecutivo', label: 'Ejecutivo', color: 'bg-green-100 text-green-800' },
     { value: 'invitado', label: 'Invitado', color: 'bg-gray-100 text-gray-800' }
   ];
+
+  // Permisos predeterminados por rol
+  const getPermisosporRol = (rol) => {
+    switch(rol) {
+      case 'administrador':
+        return {
+          dashboard: { ver: true },
+          leads: { ver: 'todos', crear: true, editar: 'todos', eliminar: true },
+          oportunidades: { ver: 'todos', crear: true, editar: 'todos', eliminar: true },
+          clientes: { ver: 'todos', crear: true, editar: 'todos', eliminar: true },
+          interacciones: { ver: 'todos', crear: true, editar: 'todos', eliminar: true },
+          tareas: { ver: 'todos', crear: true, editar: 'todos', eliminar: true },
+          calendario: { ver: true },
+          proyectos: { ver: 'todos', crear: true, editar: 'todos', eliminar: true },
+          empresas: { ver: true, crear: true, editar: true, eliminar: true },
+          usuarios: { ver: true, crear: true, editar: true, eliminar: true },
+          reportes: { ver: true },
+          configuracion: { ver: true, editar: true }
+        };
+      case 'gerente':
+        return {
+          dashboard: { ver: true },
+          leads: { ver: 'equipo', crear: true, editar: 'equipo', eliminar: false },
+          oportunidades: { ver: 'equipo', crear: true, editar: 'equipo', eliminar: false },
+          clientes: { ver: 'equipo', crear: true, editar: 'equipo', eliminar: false },
+          interacciones: { ver: 'equipo', crear: true, editar: 'equipo', eliminar: false },
+          tareas: { ver: 'equipo', crear: true, editar: 'equipo', eliminar: false },
+          calendario: { ver: true },
+          proyectos: { ver: 'equipo', crear: true, editar: 'equipo', eliminar: false },
+          empresas: { ver: true, crear: false, editar: false, eliminar: false },
+          usuarios: { ver: 'equipo', crear: false, editar: false, eliminar: false },
+          reportes: { ver: true },
+          configuracion: { ver: false, editar: false }
+        };
+      case 'ejecutivo':
+        return {
+          dashboard: { ver: true },
+          leads: { ver: 'propios', crear: true, editar: 'propios', eliminar: false },
+          oportunidades: { ver: 'propios', crear: true, editar: 'propios', eliminar: false },
+          clientes: { ver: 'propios', crear: true, editar: 'propios', eliminar: false },
+          interacciones: { ver: 'propios', crear: true, editar: 'propios', eliminar: false },
+          tareas: { ver: 'propios', crear: true, editar: 'propios', eliminar: false },
+          calendario: { ver: true },
+          proyectos: { ver: 'propios', crear: false, editar: 'propios', eliminar: false },
+          empresas: { ver: true, crear: false, editar: false, eliminar: false },
+          usuarios: { ver: false, crear: false, editar: false, eliminar: false },
+          reportes: { ver: false },
+          configuracion: { ver: false, editar: false }
+        };
+      case 'invitado':
+        return {
+          dashboard: { ver: true },
+          leads: { ver: false, crear: false, editar: false, eliminar: false },
+          oportunidades: { ver: false, crear: false, editar: false, eliminar: false },
+          clientes: { ver: 'propios', crear: false, editar: false, eliminar: false },
+          interacciones: { ver: 'propios', crear: false, editar: false, eliminar: false },
+          tareas: { ver: 'propios', crear: false, editar: 'propios', eliminar: false },
+          calendario: { ver: true },
+          proyectos: { ver: false, crear: false, editar: false, eliminar: false },
+          empresas: { ver: false, crear: false, editar: false, eliminar: false },
+          usuarios: { ver: false, crear: false, editar: false, eliminar: false },
+          reportes: { ver: false },
+          configuracion: { ver: false, editar: false }
+        };
+      default:
+        return formData.permisos;
+    }
+  };
 
   // Cargar usuarios y empresas desde Firestore
   useEffect(() => {
@@ -1021,6 +2005,73 @@ function UsuariosModule() {
     return empresa ? empresa.nombre : 'Sin asignar';
   };
 
+  const crearUsuariosPrueba = async () => {
+    if (!window.confirm('¿Crear 4 usuarios de prueba? (Admin, Gerente, Ejecutivo, Invitado)')) return;
+
+    try {
+      const usuariosPrueba = [
+        {
+          nombre: "Carlos Admin",
+          email: "admin@grx.com",
+          telefono: "+52-555-0001",
+          rol: "administrador",
+          empresaId: "",
+          equipoId: "",
+          password: "admin123",
+          activo: true,
+          fechaCreacion: new Date().toISOString(),
+          permisos: getPermisosporRol('administrador')
+        },
+        {
+          nombre: "María Gerente",
+          email: "gerente@grx.com",
+          telefono: "+52-555-0002",
+          rol: "gerente",
+          empresaId: "",
+          equipoId: "equipo-ventas",
+          password: "admin123",
+          activo: true,
+          fechaCreacion: new Date().toISOString(),
+          permisos: getPermisosporRol('gerente')
+        },
+        {
+          nombre: "Juan Ejecutivo",
+          email: "ejecutivo@grx.com",
+          telefono: "+52-555-0003",
+          rol: "ejecutivo",
+          empresaId: "",
+          equipoId: "equipo-ventas",
+          password: "admin123",
+          activo: true,
+          fechaCreacion: new Date().toISOString(),
+          permisos: getPermisosporRol('ejecutivo')
+        },
+        {
+          nombre: "Ana Invitada",
+          email: "invitado@grx.com",
+          telefono: "+52-555-0004",
+          rol: "invitado",
+          empresaId: "",
+          equipoId: "",
+          password: "admin123",
+          activo: true,
+          fechaCreacion: new Date().toISOString(),
+          permisos: getPermisosporRol('invitado')
+        }
+      ];
+
+      for (const usuario of usuariosPrueba) {
+        await addDoc(collection(db, 'usuarios'), usuario);
+      }
+
+      alert('✅ 4 usuarios de prueba creados!\n\nPuedes iniciar sesión con:\n- admin@grx.com\n- gerente@grx.com\n- ejecutivo@grx.com\n- invitado@grx.com\n\nPassword: admin123');
+      loadData();
+    } catch (error) {
+      console.error('Error creando usuarios:', error);
+      alert('Error creando usuarios: ' + error.message);
+    }
+  };
+
   const getRolData = (rolValue) => {
     return roles.find(r => r.value === rolValue) || roles[2];
   };
@@ -1056,6 +2107,13 @@ function UsuariosModule() {
             >
               {showForm ? <X size={24} /> : <Plus size={24} />}
               <span className="text-xl">{showForm ? 'Cancelar' : 'Nuevo Usuario'}</span>
+            </button>
+            <button
+              onClick={crearUsuariosPrueba}
+              className="flex items-center gap-2 bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:shadow-lg transition-all"
+            >
+              <Users size={24} />
+              <span className="text-xl">Crear Usuarios de Prueba</span>
             </button>
           </div>
         </div>
@@ -1240,13 +2298,742 @@ function UsuariosModule() {
   );
 }
 
+// Módulo Leads (Primer contacto - Sin calificar)
+function LeadsModule({ currentUser }) {
+  const [leads, setLeads] = useState([]);
+  const [allLeads, setAllLeads] = useState([]); // Todos los leads sin filtrar
+  const [oportunidades, setOportunidades] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  const [interacciones, setInteracciones] = useState([]); // Para IA Predictiva
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [showConvertModal, setShowConvertModal] = useState(null);
+  const [formData, setFormData] = useState({
+    nombre: '',
+    empresaLead: '',
+    email: '',
+    telefono: '',
+    cargo: '',
+    origen: 'web',
+    estado: 'nuevo',
+    // Calificación BANT
+    presupuesto: '',
+    autoridad: 'bajo',
+    necesidad: '',
+    timeline: '',
+    scoring: 0,
+    notas: '',
+    crearComoCliente: false
+  });
+
+  const origenes = [
+    { value: 'web', label: 'Sitio Web', icon: '🌐' },
+    { value: 'referido', label: 'Referido', icon: '👥' },
+    { value: 'evento', label: 'Evento', icon: '🎪' },
+    { value: 'cold_call', label: 'Cold Call', icon: '📞' },
+    { value: 'email', label: 'Email Marketing', icon: '📧' },
+    { value: 'redes', label: 'Redes Sociales', icon: '📱' },
+    { value: 'otro', label: 'Otro', icon: '📝' }
+  ];
+
+  const estados = [
+    { value: 'nuevo', label: 'Nuevo', color: 'bg-blue-100 text-blue-800' },
+    { value: 'contactado', label: 'Contactado', color: 'bg-yellow-100 text-yellow-800' },
+    { value: 'calificado', label: 'Calificado', color: 'bg-green-100 text-green-800' },
+    { value: 'descalificado', label: 'Descalificado', color: 'bg-red-100 text-red-800' },
+    { value: 'convertido', label: 'Convertido', color: 'bg-purple-100 text-purple-800' }
+  ];
+
+  const nivelesAutoridad = [
+    { value: 'bajo', label: 'Bajo - Sin poder de decisión' },
+    { value: 'medio', label: 'Medio - Influenciador' },
+    { value: 'alto', label: 'Alto - Tomador de decisiones' }
+  ];
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [leadsSnap, oportunidadesSnap, usuariosSnap, interaccionesSnap] = await Promise.all([
+        getDocs(collection(db, 'leads')),
+        getDocs(collection(db, 'oportunidades')),
+        getDocs(collection(db, 'usuarios')),
+        getDocs(collection(db, 'interacciones'))
+      ]);
+
+      const todosLeads = leadsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAllLeads(todosLeads);
+
+      // Aplicar filtros según permisos del usuario
+      let leadsFiltrados = todosLeads;
+      const permisoVer = currentUser?.permisos?.leads?.ver;
+
+      if (permisoVer === 'propios') {
+        // Solo ver los leads asignados a este usuario
+        leadsFiltrados = todosLeads.filter(lead => lead.asignadoA === currentUser.id);
+      } else if (permisoVer === 'equipo') {
+        // Ver los leads de su equipo
+        const usuariosEquipo = usuariosSnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(u => u.equipoId === currentUser.equipoId)
+          .map(u => u.id);
+        leadsFiltrados = todosLeads.filter(lead => usuariosEquipo.includes(lead.asignadoA));
+      } else if (permisoVer === 'todos' || permisoVer === true) {
+        // Ver todos los leads
+        leadsFiltrados = todosLeads;
+      } else if (permisoVer === false) {
+        // Sin permiso para ver leads
+        leadsFiltrados = [];
+      }
+
+      setLeads(leadsFiltrados);
+      setOportunidades(oportunidadesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setUsuarios(usuariosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setInteracciones(interaccionesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (error) {
+      console.error('Error cargando leads:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calcularScoring = (data) => {
+    let score = 0;
+
+    // Presupuesto (0-30 puntos)
+    if (data.presupuesto) {
+      const presupuesto = parseFloat(data.presupuesto);
+      if (presupuesto > 100000) score += 30;
+      else if (presupuesto > 50000) score += 20;
+      else if (presupuesto > 10000) score += 10;
+    }
+
+    // Autoridad (0-30 puntos)
+    if (data.autoridad === 'alto') score += 30;
+    else if (data.autoridad === 'medio') score += 15;
+
+    // Necesidad (0-20 puntos)
+    if (data.necesidad && data.necesidad.length > 20) score += 20;
+    else if (data.necesidad) score += 10;
+
+    // Timeline (0-20 puntos)
+    if (data.timeline) {
+      if (data.timeline.includes('inmediato') || data.timeline.includes('urgente')) score += 20;
+      else if (data.timeline.includes('mes')) score += 15;
+      else score += 10;
+    }
+
+    return score;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const scoring = calcularScoring(formData);
+      const dataToSave = { ...formData, scoring, fechaCreacion: new Date().toISOString() };
+
+      if (editingId) {
+        await updateDoc(doc(db, 'leads', editingId), dataToSave);
+        alert('Lead actualizado exitosamente!');
+      } else {
+        // Crear nuevo lead
+        const leadRef = await addDoc(collection(db, 'leads'), dataToSave);
+
+        // Crear tarea automática: Contactar lead en 24 horas
+        const fechaVencimiento = new Date();
+        fechaVencimiento.setHours(fechaVencimiento.getHours() + 24);
+
+        await addDoc(collection(db, 'tareas'), {
+          titulo: `Contactar lead: ${formData.nombre}`,
+          descripcion: `Hacer primer contacto con el lead ${formData.nombre} de ${formData.empresaLead || 'empresa sin especificar'}. Email: ${formData.email}, Teléfono: ${formData.telefono || 'No especificado'}`,
+          prioridad: 'alta',
+          estado: 'pendiente',
+          fechaCreacion: new Date().toISOString(),
+          fechaVencimiento: fechaVencimiento.toISOString(),
+          responsable: formData.responsable || 'Sin asignar',
+          relacionadoCon: 'lead',
+          relacionadoId: leadRef.id,
+          relacionadoNombre: formData.nombre
+        });
+
+        // Si está marcado "Crear como Cliente", crear el cliente también
+        if (formData.crearComoCliente) {
+          await addDoc(collection(db, 'clientes'), {
+            nombre: formData.nombre,
+            empresaNombre: formData.empresaLead,
+            email: formData.email,
+            telefono: formData.telefono || '',
+            cargo: formData.cargo || '',
+            industria: '',
+            ubicacion: '',
+            etiquetas: 'Lead',
+            notas: `Cliente creado automáticamente junto con el lead.\n\nOrigen: ${formData.origen}\nNotas del lead: ${formData.notas}`,
+            activo: true,
+            fechaCreacion: new Date().toISOString(),
+            origenLeadId: leadRef.id
+          });
+          alert('✅ Lead creado exitosamente!\n\n✓ Lead registrado\n✓ Cliente creado\n✓ Tarea generada: Contactar en 24 horas');
+        } else {
+          alert('Lead creado exitosamente! Se ha generado una tarea automática para contactarlo.');
+        }
+      }
+      resetForm();
+      loadData();
+    } catch (error) {
+      console.error('Error guardando lead:', error);
+      alert('Error guardando lead: ' + error.message);
+    }
+  };
+
+  const handleConvertToOportunidad = async (lead) => {
+    if (!lead.presupuesto || !lead.necesidad) {
+      alert('Completa la calificación BANT antes de convertir a oportunidad');
+      return;
+    }
+
+    try {
+      // PASO 1: Crear el cliente primero
+      const clienteRef = await addDoc(collection(db, 'clientes'), {
+        nombre: lead.nombre,
+        empresaNombre: lead.empresaLead,
+        email: lead.email,
+        telefono: lead.telefono || '',
+        cargo: lead.cargo || '',
+        industria: '',
+        ubicacion: '',
+        etiquetas: 'Prospecto Calificado',
+        notas: `Cliente creado automáticamente desde Lead convertido.\n\nOrigen: ${lead.origen}\nCalificación BANT:\n- Presupuesto: $${lead.presupuesto}\n- Autoridad: ${lead.autoridad}\n- Necesidad: ${lead.necesidad}\n- Timeline: ${lead.timeline}\n\nNotas originales: ${lead.notas}`,
+        activo: true,
+        fechaCreacion: new Date().toISOString(),
+        origenLeadId: lead.id
+      });
+
+      // PASO 2: Crear oportunidad vinculada al cliente
+      const oportunidadRef = await addDoc(collection(db, 'oportunidades'), {
+        nombre: `Oportunidad - ${lead.empresaLead || lead.nombre}`,
+        clienteId: clienteRef.id,
+        empresaId: lead.empresaId || '',
+        usuarioResponsableId: lead.asignadoA || currentUser?.id || '',
+        valor: parseFloat(lead.presupuesto) || 0,
+        probabilidad: lead.scoring,
+        etapa: 'Contacto Inicial',
+        fechaEstimadaCierre: '',
+        origen: lead.origen,
+        notas: `Convertido desde Lead.\n\nCalificación BANT:\n- Presupuesto: $${lead.presupuesto}\n- Autoridad: ${lead.autoridad}\n- Necesidad: ${lead.necesidad}\n- Timeline: ${lead.timeline}\n\nNotas originales: ${lead.notas}`,
+        fechaCreacion: new Date().toISOString(),
+        leadId: lead.id
+      });
+
+      // Actualizar lead como convertido
+      await updateDoc(doc(db, 'leads', lead.id), {
+        estado: 'convertido',
+        fechaConversion: new Date().toISOString()
+      });
+
+      // Crear tarea automática: Enviar propuesta comercial
+      const fechaVencimiento = new Date();
+      fechaVencimiento.setDate(fechaVencimiento.getDate() + 3); // 3 días
+
+      await addDoc(collection(db, 'tareas'), {
+        titulo: `Enviar propuesta comercial: ${lead.empresaLead}`,
+        descripcion: `Preparar y enviar propuesta comercial a ${lead.nombre} (${lead.empresaLead}).\n\nPresupuesto estimado: $${lead.presupuesto}\nNecesidad: ${lead.necesidad}\nTimeline: ${lead.timeline}\n\nContacto: ${lead.email}`,
+        prioridad: 'alta',
+        estado: 'pendiente',
+        fechaCreacion: new Date().toISOString(),
+        fechaVencimiento: fechaVencimiento.toISOString(),
+        responsable: lead.responsable || 'Sin asignar',
+        relacionadoCon: 'oportunidad',
+        relacionadoId: oportunidadRef.id,
+        relacionadoNombre: `Oportunidad - ${lead.empresaLead}`
+      });
+
+      alert('✅ ¡Lead convertido exitosamente!\n\n✓ Cliente creado\n✓ Oportunidad creada en Pipeline\n✓ Tarea generada: Enviar propuesta comercial');
+      setShowConvertModal(null);
+      loadData();
+    } catch (error) {
+      console.error('Error convirtiendo lead:', error);
+      alert('Error: ' + error.message);
+    }
+  };
+
+  const handleEdit = (lead) => {
+    setFormData({ ...lead });
+    setEditingId(lead.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('¿Estás seguro de eliminar este lead?')) {
+      try {
+        await deleteDoc(doc(db, 'leads', id));
+        loadData();
+      } catch (error) {
+        console.error('Error eliminando lead:', error);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      nombre: '',
+      empresaLead: '',
+      email: '',
+      telefono: '',
+      cargo: '',
+      origen: 'web',
+      estado: 'nuevo',
+      presupuesto: '',
+      autoridad: 'bajo',
+      necesidad: '',
+      timeline: '',
+      scoring: 0,
+      notas: '',
+      crearComoCliente: false
+    });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-4 border-orange-500 mb-4"></div>
+          <p className="text-lg text-gray-600">Cargando leads...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-6 lg:p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-3xl lg:text-4xl font-bold flex items-center gap-3">
+              <UserPlus size={36} />
+              Leads
+            </h2>
+            <p className="text-blue-100 mt-2">Primer contacto - Califica y convierte en oportunidades</p>
+          </div>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-white text-blue-700 px-4 lg:px-6 py-2 lg:py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all text-base lg:text-xl"
+          >
+            {showForm ? <X size={20} /> : <Plus size={20} />}
+            <span>{showForm ? 'Cancelar' : 'Nuevo Lead'}</span>
+          </button>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="bg-white rounded-xl shadow-md p-4 lg:p-8 mb-8 border-l-4 border-orange-500">
+          <h3 className="text-xl lg:text-2xl font-semibold mb-6 text-blue-700">
+            {editingId ? 'Editar Lead' : 'Nuevo Lead'}
+          </h3>
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+              <div>
+                <label className="block text-base lg:text-lg font-medium text-gray-700 mb-2">Nombre Contacto *</label>
+                <input
+                  required
+                  type="text"
+                  value={formData.nombre}
+                  onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                  className="w-full px-3 lg:px-4 py-2 lg:py-3 text-base lg:text-lg border border-gray-300 rounded-md"
+                  placeholder="Juan Pérez"
+                />
+              </div>
+
+              <div>
+                <label className="block text-base lg:text-lg font-medium text-gray-700 mb-2">Empresa *</label>
+                <input
+                  required
+                  type="text"
+                  value={formData.empresaLead}
+                  onChange={(e) => setFormData({...formData, empresaLead: e.target.value})}
+                  className="w-full px-3 lg:px-4 py-2 lg:py-3 text-base lg:text-lg border border-gray-300 rounded-md"
+                  placeholder="Acme Corp"
+                />
+              </div>
+
+              <div>
+                <label className="block text-base lg:text-lg font-medium text-gray-700 mb-2">Email *</label>
+                <input
+                  required
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  className="w-full px-3 lg:px-4 py-2 lg:py-3 text-base lg:text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+
+              <div>
+                <label className="block text-base lg:text-lg font-medium text-gray-700 mb-2">Teléfono</label>
+                <input
+                  type="tel"
+                  value={formData.telefono}
+                  onChange={(e) => setFormData({...formData, telefono: e.target.value})}
+                  className="w-full px-3 lg:px-4 py-2 lg:py-3 text-base lg:text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+
+              <div>
+                <label className="block text-base lg:text-lg font-medium text-gray-700 mb-2">Cargo</label>
+                <input
+                  type="text"
+                  value={formData.cargo}
+                  onChange={(e) => setFormData({...formData, cargo: e.target.value})}
+                  className="w-full px-3 lg:px-4 py-2 lg:py-3 text-base lg:text-lg border border-gray-300 rounded-md"
+                  placeholder="Director de TI"
+                />
+              </div>
+
+              <div>
+                <label className="block text-base lg:text-lg font-medium text-gray-700 mb-2">Origen *</label>
+                <select
+                  value={formData.origen}
+                  onChange={(e) => setFormData({...formData, origen: e.target.value})}
+                  className="w-full px-3 lg:px-4 py-2 lg:py-3 text-base lg:text-lg border border-gray-300 rounded-md"
+                >
+                  {origenes.map(origen => (
+                    <option key={origen.value} value={origen.value}>
+                      {origen.icon} {origen.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-base lg:text-lg font-medium text-gray-700 mb-2">Estado</label>
+                <select
+                  value={formData.estado}
+                  onChange={(e) => setFormData({...formData, estado: e.target.value})}
+                  className="w-full px-3 lg:px-4 py-2 lg:py-3 text-base lg:text-lg border border-gray-300 rounded-md"
+                >
+                  {estados.map(estado => (
+                    <option key={estado.value} value={estado.value}>{estado.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Calificación BANT */}
+              <div className="col-span-1 lg:col-span-2 border-t-2 border-orange-200 pt-6 mt-4">
+                <h4 className="text-lg lg:text-xl font-bold text-orange-600 mb-4">📊 Calificación BANT</h4>
+              </div>
+
+              <div>
+                <label className="block text-base lg:text-lg font-medium text-gray-700 mb-2">💰 Budget (Presupuesto Estimado)</label>
+                <input
+                  type="number"
+                  value={formData.presupuesto}
+                  onChange={(e) => setFormData({...formData, presupuesto: e.target.value})}
+                  className="w-full px-3 lg:px-4 py-2 lg:py-3 text-base lg:text-lg border border-gray-300 rounded-md"
+                  placeholder="50000"
+                />
+              </div>
+
+              <div>
+                <label className="block text-base lg:text-lg font-medium text-gray-700 mb-2">👤 Authority (Nivel de Autoridad)</label>
+                <select
+                  value={formData.autoridad}
+                  onChange={(e) => setFormData({...formData, autoridad: e.target.value})}
+                  className="w-full px-3 lg:px-4 py-2 lg:py-3 text-base lg:text-lg border border-gray-300 rounded-md"
+                >
+                  {nivelesAutoridad.map(nivel => (
+                    <option key={nivel.value} value={nivel.value}>{nivel.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="col-span-1 lg:col-span-2">
+                <label className="block text-base lg:text-lg font-medium text-gray-700 mb-2">🎯 Need (Necesidad del Cliente)</label>
+                <textarea
+                  value={formData.necesidad}
+                  onChange={(e) => setFormData({...formData, necesidad: e.target.value})}
+                  rows={3}
+                  className="w-full px-3 lg:px-4 py-2 lg:py-3 text-base lg:text-lg border border-gray-300 rounded-md"
+                  placeholder="Describe la necesidad o problema del cliente..."
+                />
+              </div>
+
+              <div className="col-span-1 lg:col-span-2">
+                <label className="block text-base lg:text-lg font-medium text-gray-700 mb-2">⏰ Timeline (Timeframe de Decisión)</label>
+                <input
+                  type="text"
+                  value={formData.timeline}
+                  onChange={(e) => setFormData({...formData, timeline: e.target.value})}
+                  className="w-full px-3 lg:px-4 py-2 lg:py-3 text-base lg:text-lg border border-gray-300 rounded-md"
+                  placeholder="En 2-3 meses, este trimestre, inmediato..."
+                />
+              </div>
+
+              <div className="col-span-1 lg:col-span-2">
+                <label className="block text-base lg:text-lg font-medium text-gray-700 mb-2">Notas</label>
+                <textarea
+                  value={formData.notas}
+                  onChange={(e) => setFormData({...formData, notas: e.target.value})}
+                  rows={3}
+                  className="w-full px-3 lg:px-4 py-2 lg:py-3 text-base lg:text-lg border border-gray-300 rounded-md"
+                />
+              </div>
+
+              {!editingId && (
+                <div className="col-span-1 lg:col-span-2 bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.crearComoCliente}
+                      onChange={(e) => setFormData({...formData, crearComoCliente: e.target.checked})}
+                      className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                    />
+                    <span className="text-base lg:text-lg font-semibold text-green-900">
+                      ✅ Crear también como Cliente (evita volver a teclear la información)
+                    </span>
+                  </label>
+                  <p className="text-sm text-green-700 ml-8 mt-1">
+                    Recomendado si ya es un prospecto calificado que se agregará al CRM
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                type="submit"
+                className="flex items-center gap-2 bg-blue-600 text-white px-4 lg:px-6 py-2 lg:py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all text-base lg:text-lg"
+              >
+                <Save size={20} />
+                {editingId ? 'Actualizar' : 'Crear'} Lead
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="px-4 lg:px-6 py-2 lg:py-3 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-all text-base lg:text-lg"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Tabla de Leads */}
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+        {leads.length === 0 ? (
+          <div className="text-center py-12">
+            <UserPlus size={64} className="mx-auto text-gray-300 mb-4" />
+            <p className="text-xl text-gray-500">No hay leads registrados</p>
+            <p className="text-gray-400 mt-2">Crea tu primer lead para comenzar</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-sm lg:text-lg font-semibold text-gray-700">Lead</th>
+                  <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-sm lg:text-lg font-semibold text-gray-700">Contacto</th>
+                  <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-sm lg:text-lg font-semibold text-gray-700">Origen</th>
+                  <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-sm lg:text-lg font-semibold text-gray-700">Estado</th>
+                  <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-sm lg:text-lg font-semibold text-gray-700">BANT</th>
+                  <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-sm lg:text-lg font-semibold text-gray-700 bg-gradient-to-r from-purple-50 to-pink-50">
+                    <div className="flex items-center gap-2">
+                      <Award size={20} className="text-purple-600" />
+                      <span>IA Score</span>
+                    </div>
+                  </th>
+                  <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-sm lg:text-lg font-semibold text-gray-700 bg-gradient-to-r from-pink-50 to-purple-50">Siguiente Acción</th>
+                  <th className="px-4 lg:px-6 py-3 lg:py-4 text-left text-sm lg:text-lg font-semibold text-gray-700">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leads.map(lead => {
+                  const origenInfo = origenes.find(o => o.value === lead.origen) || origenes[0];
+                  const estadoInfo = estados.find(e => e.value === lead.estado) || estados[0];
+
+                  // IA Predictiva
+                  const leadConFuente = { ...lead, fuente: lead.origen, empresa: lead.empresaLead };
+                  const aiScore = calcularLeadScore(leadConFuente, interacciones);
+                  const siguienteAccion = recomendarSiguienteAccion(leadConFuente, 'lead', interacciones);
+
+                  return (
+                    <tr key={lead.id} className="border-b border-gray-200 hover:bg-gray-50">
+                      <td className="px-4 lg:px-6 py-3 lg:py-4">
+                        <div className="font-semibold text-base lg:text-lg text-gray-900">{lead.nombre}</div>
+                        <div className="text-sm text-gray-600">{lead.empresaLead}</div>
+                        {lead.cargo && <div className="text-xs text-gray-500">{lead.cargo}</div>}
+                      </td>
+                      <td className="px-4 lg:px-6 py-3 lg:py-4 text-sm">
+                        <div className="text-gray-900">{lead.email}</div>
+                        <div className="text-gray-600">{lead.telefono}</div>
+                      </td>
+                      <td className="px-4 lg:px-6 py-3 lg:py-4">
+                        <span className="text-lg">{origenInfo.icon}</span>
+                        <span className="ml-2 text-sm lg:text-base text-gray-700">{origenInfo.label}</span>
+                      </td>
+                      <td className="px-4 lg:px-6 py-3 lg:py-4">
+                        <span className={`px-2 lg:px-3 py-1 rounded-full text-xs lg:text-sm font-semibold ${estadoInfo.color}`}>
+                          {estadoInfo.label}
+                        </span>
+                      </td>
+                      <td className="px-4 lg:px-6 py-3 lg:py-4">
+                        <div className="flex items-center gap-2">
+                          <Target size={16} className={lead.scoring >= 70 ? 'text-green-600' : lead.scoring >= 40 ? 'text-yellow-600' : 'text-red-600'} />
+                          <span className={`font-bold text-base ${lead.scoring >= 70 ? 'text-green-600' : lead.scoring >= 40 ? 'text-yellow-600' : 'text-red-600'}`}>
+                            {lead.scoring || 0}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 lg:px-6 py-3 lg:py-4 bg-gradient-to-r from-purple-50 to-pink-50">
+                        <div className="flex items-center gap-2">
+                          <Award size={18} className={aiScore >= 70 ? 'text-green-600' : aiScore >= 40 ? 'text-yellow-600' : 'text-red-600'} />
+                          <span className={`font-bold text-lg ${aiScore >= 70 ? 'text-green-600' : aiScore >= 40 ? 'text-yellow-600' : 'text-red-600'}`}>
+                            {aiScore}
+                          </span>
+                          <span className="text-xs font-semibold text-gray-500">
+                            {aiScore >= 70 ? '🔥 HOT' : aiScore >= 40 ? '⚡ WARM' : '❄️ COLD'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 lg:px-6 py-3 lg:py-4 bg-gradient-to-r from-pink-50 to-purple-50">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{siguienteAccion.icono}</span>
+                            <span className="font-semibold text-sm text-gray-900">{siguienteAccion.accion}</span>
+                          </div>
+                          <div className={`text-xs px-2 py-1 rounded inline-block ${
+                            siguienteAccion.prioridad === 'alta' ? 'bg-red-100 text-red-800' :
+                            siguienteAccion.prioridad === 'media' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            Prioridad: {siguienteAccion.prioridad.toUpperCase()}
+                          </div>
+                          <div className="text-xs text-gray-600 italic">{siguienteAccion.razon}</div>
+                        </div>
+                      </td>
+                      <td className="px-4 lg:px-6 py-3 lg:py-4">
+                        <div className="flex gap-2 flex-wrap">
+                          {lead.estado !== 'convertido' && lead.estado !== 'descalificado' && (
+                            <button
+                              onClick={() => setShowConvertModal(lead)}
+                              className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all"
+                              title="Convertir a Oportunidad"
+                            >
+                              <ArrowRight size={18} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleEdit(lead)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                          >
+                            <Edit2 size={18} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(lead.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Modal de Conversión */}
+      {showConvertModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowConvertModal(null)}>
+          <div className="bg-white rounded-xl shadow-2xl p-6 lg:p-8 max-w-2xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                <ArrowRight className="text-green-600" size={28} />
+                Convertir a Oportunidad
+              </h3>
+              <button onClick={() => setShowConvertModal(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={28} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                <p className="font-semibold text-blue-900">{showConvertModal.nombre}</p>
+                <p className="text-blue-700">{showConvertModal.empresaLead}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Presupuesto</p>
+                  <p className="text-lg font-semibold">${showConvertModal.presupuesto || 'No especificado'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Scoring</p>
+                  <p className="text-lg font-semibold text-green-600">{showConvertModal.scoring || 0}/100</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Autoridad</p>
+                  <p className="text-base capitalize">{showConvertModal.autoridad}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Timeline</p>
+                  <p className="text-base">{showConvertModal.timeline || 'No especificado'}</p>
+                </div>
+              </div>
+
+              {showConvertModal.necesidad && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">Necesidad</p>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-gray-900">{showConvertModal.necesidad}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => handleConvertToOportunidad(showConvertModal)}
+                  className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <ArrowRight size={20} />
+                  Convertir a Oportunidad
+                </button>
+                <button
+                  onClick={() => setShowConvertModal(null)}
+                  className="px-6 py-3 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Módulo Clientes
-function ClientesModule() {
+function ClientesModule({ currentUser }) {
   const [clientes, setClientes] = useState([]);
+  const [allClientes, setAllClientes] = useState([]);
   const [empresas, setEmpresas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [show360View, setShow360View] = useState(null);
+  const [leads, setLeads] = useState([]);
+  const [oportunidades, setOportunidades] = useState([]);
+  const [interacciones, setInteracciones] = useState([]);
+  const [tareas, setTareas] = useState([]);
+  const [proyectos, setProyectos] = useState([]);
   const [formData, setFormData] = useState({
     nombre: '',
     empresaId: '',
@@ -1271,21 +3058,60 @@ function ClientesModule() {
     try {
       setLoading(true);
 
-      // Cargar clientes
-      const clientesSnapshot = await getDocs(collection(db, 'clientes'));
-      const clientesData = clientesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setClientes(clientesData);
+      // Cargar todos los datos para la vista 360°
+      const [
+        clientesSnapshot,
+        empresasSnapshot,
+        leadsSnapshot,
+        oportunidadesSnapshot,
+        interaccionesSnapshot,
+        tareasSnapshot,
+        proyectosSnapshot
+      ] = await Promise.all([
+        getDocs(collection(db, 'clientes')),
+        getDocs(collection(db, 'empresas')),
+        getDocs(collection(db, 'leads')),
+        getDocs(collection(db, 'oportunidades')),
+        getDocs(collection(db, 'interacciones')),
+        getDocs(collection(db, 'tareas')),
+        getDocs(collection(db, 'proyectos'))
+      ]);
 
-      // Cargar empresas para el dropdown
-      const empresasSnapshot = await getDocs(collection(db, 'empresas'));
-      const empresasData = empresasSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setEmpresas(empresasData);
+      const todosClientes = clientesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAllClientes(todosClientes);
+
+      // Aplicar filtros según permisos
+      let clientesFiltrados = todosClientes;
+      const permisoVer = currentUser?.permisos?.clientes?.ver;
+
+      if (permisoVer === 'propios') {
+        // Solo ver clientes creados por este usuario o asignados a él
+        clientesFiltrados = todosClientes.filter(c =>
+          c.creadoPor === currentUser.id || c.asignadoA === currentUser.id
+        );
+      } else if (permisoVer === 'equipo') {
+        // Ver clientes del equipo (necesitamos cargar usuarios)
+        const usuariosSnapshot = await getDocs(collection(db, 'usuarios'));
+        const usuariosEquipo = usuariosSnapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(u => u.equipoId === currentUser.equipoId)
+          .map(u => u.id);
+        clientesFiltrados = todosClientes.filter(c =>
+          usuariosEquipo.includes(c.creadoPor) || usuariosEquipo.includes(c.asignadoA)
+        );
+      } else if (permisoVer === 'todos' || permisoVer === true) {
+        clientesFiltrados = todosClientes;
+      } else if (permisoVer === false) {
+        clientesFiltrados = [];
+      }
+
+      setClientes(clientesFiltrados);
+      setEmpresas(empresasSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setLeads(leadsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setOportunidades(oportunidadesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setInteracciones(interaccionesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setTareas(tareasSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setProyectos(proyectosSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     } catch (error) {
       console.error('Error cargando datos:', error);
     } finally {
@@ -1576,12 +3402,24 @@ function ClientesModule() {
                   <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Industria</th>
                   <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Empresa</th>
                   <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Etiquetas</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700 bg-gradient-to-r from-red-50 to-orange-50">
+                    <div className="flex items-center gap-2">
+                      <Info size={18} className="text-red-600" />
+                      <span>Riesgo Churn</span>
+                    </div>
+                  </th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700 bg-gradient-to-r from-orange-50 to-red-50">Siguiente Acción</th>
                   <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Estado</th>
                   <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {clientes.map(cliente => (
+                {clientes.map(cliente => {
+                  // IA Predictiva
+                  const riesgoChurn = calcularRiesgoChurn(cliente, interacciones);
+                  const siguienteAccion = recomendarSiguienteAccion(cliente, 'cliente', interacciones);
+
+                  return (
                   <tr key={cliente.id} className="border-b border-gray-200 hover:bg-gray-50">
                     <td className="px-6 py-4 text-lg text-gray-900 font-medium">{cliente.nombre}</td>
                     <td className="px-6 py-4 text-lg text-gray-600">{cliente.email}</td>
@@ -1599,6 +3437,38 @@ function ClientesModule() {
                         </div>
                       ) : '-'}
                     </td>
+                    <td className="px-6 py-4 bg-gradient-to-r from-red-50 to-orange-50">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Info size={18} className={riesgoChurn >= 70 ? 'text-red-600' : riesgoChurn >= 40 ? 'text-orange-600' : 'text-green-600'} />
+                          <span className={`font-bold text-lg ${riesgoChurn >= 70 ? 'text-red-600' : riesgoChurn >= 40 ? 'text-orange-600' : 'text-green-600'}`}>
+                            {riesgoChurn}
+                          </span>
+                        </div>
+                        <div className={`text-xs px-2 py-1 rounded inline-block font-semibold ${
+                          riesgoChurn >= 70 ? 'bg-red-100 text-red-800' :
+                          riesgoChurn >= 40 ? 'bg-orange-100 text-orange-800' :
+                          'bg-green-100 text-green-800'
+                        }`}>
+                          {riesgoChurn >= 70 ? '🚨 ALTO RIESGO' : riesgoChurn >= 40 ? '⚠️ RIESGO MEDIO' : '✅ SALUDABLE'}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 bg-gradient-to-r from-orange-50 to-red-50">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{siguienteAccion.icono}</span>
+                          <span className="font-semibold text-sm text-gray-900">{siguienteAccion.accion}</span>
+                        </div>
+                        <div className={`text-xs px-2 py-0.5 rounded inline-block ${
+                          siguienteAccion.prioridad === 'alta' ? 'bg-red-100 text-red-800' :
+                          siguienteAccion.prioridad === 'media' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {siguienteAccion.prioridad.toUpperCase()}
+                        </div>
+                      </div>
+                    </td>
                     <td className="px-6 py-4">
                       <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
                         cliente.activo
@@ -1610,6 +3480,13 @@ function ClientesModule() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex gap-2">
+                        <button
+                          onClick={() => setShow360View(cliente)}
+                          className="px-3 py-1 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-all font-semibold"
+                          title="Ver historial completo 360°"
+                        >
+                          360°
+                        </button>
                         <button
                           onClick={() => handleEdit(cliente)}
                           className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
@@ -1625,12 +3502,267 @@ function ClientesModule() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {/* Modal Vista 360° */}
+      {show360View && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShow360View(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-purple-700 text-white p-6 rounded-t-xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-3xl font-bold mb-2">Vista 360° - {show360View.nombre}</h2>
+                  <p className="text-purple-100">{show360View.email}</p>
+                </div>
+                <button onClick={() => setShow360View(null)} className="text-white hover:text-gray-200">
+                  <X size={32} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Información del Cliente */}
+              <div className="bg-gray-50 rounded-lg p-6">
+                <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <UserCircle size={24} className="text-purple-600" />
+                  Información del Cliente
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Cargo</p>
+                    <p className="text-lg font-semibold">{show360View.cargo || 'No especificado'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Industria</p>
+                    <p className="text-lg font-semibold">{show360View.industria || 'No especificada'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Ubicación</p>
+                    <p className="text-lg font-semibold">{show360View.ubicacion || 'No especificada'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Teléfono</p>
+                    <p className="text-lg font-semibold">{show360View.telefono || 'No especificado'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Empresa</p>
+                    <p className="text-lg font-semibold">{getEmpresaNombre(show360View.empresaId)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Estado</p>
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${show360View.activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {show360View.activo ? 'Activo' : 'Inactivo'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Historial Lead → Oportunidad → Cliente */}
+              {(() => {
+                const leadRelacionado = leads.find(l => l.email === show360View.email);
+                const oportunidadesRelacionadas = oportunidades.filter(o =>
+                  o.clienteEmail === show360View.email ||
+                  o.clienteIdFinal === show360View.id ||
+                  (leadRelacionado && o.leadId === leadRelacionado.id)
+                );
+
+                if (leadRelacionado || oportunidadesRelacionadas.length > 0) {
+                  return (
+                    <div className="bg-blue-50 rounded-lg p-6">
+                      <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                        <TrendingUp size={24} className="text-blue-600" />
+                        Historial de Conversión
+                      </h3>
+                      <div className="flex items-center gap-4">
+                        {leadRelacionado && (
+                          <div className="flex-1 bg-white rounded-lg p-4 border-2 border-blue-300">
+                            <div className="flex items-center gap-2 mb-2">
+                              <UserPlus size={20} className="text-blue-600" />
+                              <h4 className="font-bold text-blue-900">Lead</h4>
+                            </div>
+                            <p className="text-sm text-gray-600">Origen: {leadRelacionado.origen}</p>
+                            <p className="text-sm text-gray-600">Scoring: {leadRelacionado.scoring}/100</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {new Date(leadRelacionado.fechaCreacion).toLocaleDateString('es-MX')}
+                            </p>
+                          </div>
+                        )}
+                        {leadRelacionado && oportunidadesRelacionadas.length > 0 && (
+                          <ArrowRight size={24} className="text-gray-400" />
+                        )}
+                        {oportunidadesRelacionadas.length > 0 && (
+                          <div className="flex-1 bg-white rounded-lg p-4 border-2 border-green-300">
+                            <div className="flex items-center gap-2 mb-2">
+                              <DollarSign size={20} className="text-green-600" />
+                              <h4 className="font-bold text-green-900">Oportunidades ({oportunidadesRelacionadas.length})</h4>
+                            </div>
+                            <p className="text-sm text-gray-600">
+                              Valor total: ${oportunidadesRelacionadas.reduce((sum, o) => sum + (o.valor || 0), 0).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Ganadas: {oportunidadesRelacionadas.filter(o => o.etapa === 'Cerrado Ganado').length}
+                            </p>
+                          </div>
+                        )}
+                        {oportunidadesRelacionadas.some(o => o.convertidoACliente) && (
+                          <>
+                            <ArrowRight size={24} className="text-gray-400" />
+                            <div className="flex-1 bg-white rounded-lg p-4 border-2 border-purple-300">
+                              <div className="flex items-center gap-2 mb-2">
+                                <UserCircle size={20} className="text-purple-600" />
+                                <h4 className="font-bold text-purple-900">Cliente</h4>
+                              </div>
+                              <p className="text-sm text-gray-600">Estado: {show360View.activo ? 'Activo' : 'Inactivo'}</p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {show360View.fechaCreacion ? new Date(show360View.fechaCreacion).toLocaleDateString('es-MX') : 'Fecha no disponible'}
+                              </p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Interacciones */}
+              {(() => {
+                const interaccionesCliente = interacciones.filter(i =>
+                  i.clienteId === show360View.id ||
+                  i.clienteEmail === show360View.email
+                );
+
+                if (interaccionesCliente.length > 0) {
+                  return (
+                    <div className="bg-white rounded-lg border border-gray-200 p-6">
+                      <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                        <Phone size={24} className="text-orange-600" />
+                        Interacciones ({interaccionesCliente.length})
+                      </h3>
+                      <div className="space-y-3 max-h-60 overflow-y-auto">
+                        {interaccionesCliente.slice(0, 10).map(interaccion => (
+                          <div key={interaccion.id} className="bg-gray-50 rounded-lg p-3 border-l-4 border-orange-500">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-semibold capitalize">{interaccion.tipo}</span>
+                              <span className="text-sm text-gray-500">
+                                {new Date(interaccion.fecha).toLocaleDateString('es-MX')}
+                              </span>
+                            </div>
+                            {interaccion.notas && (
+                              <p className="text-sm text-gray-600 line-clamp-2">{interaccion.notas}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Tareas */}
+              {(() => {
+                const tareasCliente = tareas.filter(t =>
+                  t.relacionadoId === show360View.id ||
+                  t.relacionadoNombre?.includes(show360View.nombre) ||
+                  (oportunidades.find(o => o.clienteEmail === show360View.email && t.relacionadoId === o.id))
+                );
+
+                if (tareasCliente.length > 0) {
+                  return (
+                    <div className="bg-white rounded-lg border border-gray-200 p-6">
+                      <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                        <ClipboardList size={24} className="text-green-600" />
+                        Tareas ({tareasCliente.length})
+                      </h3>
+                      <div className="space-y-3 max-h-60 overflow-y-auto">
+                        {tareasCliente.slice(0, 10).map(tarea => (
+                          <div key={tarea.id} className="bg-gray-50 rounded-lg p-3 border-l-4 border-green-500">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-semibold">{tarea.titulo}</span>
+                              <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                tarea.estado === 'completada' ? 'bg-green-100 text-green-800' :
+                                tarea.estado === 'en_progreso' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {tarea.estado}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600 line-clamp-2">{tarea.descripcion}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Proyectos */}
+              {(() => {
+                const proyectosCliente = proyectos.filter(p =>
+                  p.clienteId === show360View.id
+                );
+
+                if (proyectosCliente.length > 0) {
+                  return (
+                    <div className="bg-white rounded-lg border border-gray-200 p-6">
+                      <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                        <Briefcase size={24} className="text-indigo-600" />
+                        Proyectos ({proyectosCliente.length})
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {proyectosCliente.slice(0, 6).map(proyecto => (
+                          <div key={proyecto.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                            <h4 className="font-bold text-gray-900 mb-2">{proyecto.nombre}</h4>
+                            <div className="space-y-1 text-sm">
+                              <p className="text-gray-600">Estado: <span className="font-semibold">{proyecto.estado}</span></p>
+                              {proyecto.presupuesto && (
+                                <p className="text-gray-600">Presupuesto: <span className="font-semibold">${proyecto.presupuesto}</span></p>
+                              )}
+                              {proyecto.fechaInicio && (
+                                <p className="text-gray-500 text-xs">
+                                  Inicio: {new Date(proyecto.fechaInicio).toLocaleDateString('es-MX')}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Notas del Cliente */}
+              {show360View.notas && (
+                <div className="bg-yellow-50 rounded-lg p-6 border border-yellow-200">
+                  <h3 className="text-xl font-bold text-gray-900 mb-3">Notas</h3>
+                  <p className="text-gray-700 whitespace-pre-wrap">{show360View.notas}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 bg-gray-100 p-4 rounded-b-xl flex justify-end">
+              <button
+                onClick={() => setShow360View(null)}
+                className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-all"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3405,8 +5537,9 @@ function ProyectosModule() {
 }
 
 // Módulo Oportunidades
-function OportunidadesModule() {
+function OportunidadesModule({ currentUser }) {
   const [oportunidades, setOportunidades] = useState([]);
+  const [allOportunidades, setAllOportunidades] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [empresas, setEmpresas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -3416,6 +5549,23 @@ function OportunidadesModule() {
   const [editingId, setEditingId] = useState(null);
   const [vistaKanban, setVistaKanban] = useState(true);
   const [interaccionSeleccionada, setInteraccionSeleccionada] = useState(null);
+  const [showConvertirClienteModal, setShowConvertirClienteModal] = useState(null);
+  const [oportunidadDetalle, setOportunidadDetalle] = useState(null);
+  const [tareasRelacionadas, setTareasRelacionadas] = useState([]);
+  const [showNuevaInteraccion, setShowNuevaInteraccion] = useState(false);
+  const [showNuevaTarea, setShowNuevaTarea] = useState(false);
+  const [nuevaInteraccion, setNuevaInteraccion] = useState({
+    tipo: 'llamada',
+    descripcion: '',
+    resultado: '',
+    fecha: new Date().toISOString().split('T')[0]
+  });
+  const [nuevaTarea, setNuevaTarea] = useState({
+    titulo: '',
+    descripcion: '',
+    prioridad: 'media',
+    fechaVencimiento: ''
+  });
   const [formData, setFormData] = useState({
     nombre: '',
     clienteId: '',
@@ -3451,10 +5601,29 @@ function OportunidadesModule() {
         getDocs(collection(db, 'interacciones'))
       ]);
 
-      const oportunidadesList = oportunidadesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      oportunidadesList.sort((a, b) => new Date(b.fechaCreacion || 0) - new Date(a.fechaCreacion || 0));
+      const todasOportunidades = oportunidadesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      todasOportunidades.sort((a, b) => new Date(b.fechaCreacion || 0) - new Date(a.fechaCreacion || 0));
+      setAllOportunidades(todasOportunidades);
 
-      setOportunidades(oportunidadesList);
+      // Aplicar filtros según permisos
+      let oportunidadesFiltradas = todasOportunidades;
+      const permisoVer = currentUser?.permisos?.oportunidades?.ver;
+
+      if (permisoVer === 'propios') {
+        oportunidadesFiltradas = todasOportunidades.filter(op => op.usuarioResponsableId === currentUser.id);
+      } else if (permisoVer === 'equipo') {
+        const usuariosEquipo = usuariosSnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(u => u.equipoId === currentUser.equipoId)
+          .map(u => u.id);
+        oportunidadesFiltradas = todasOportunidades.filter(op => usuariosEquipo.includes(op.usuarioResponsableId));
+      } else if (permisoVer === 'todos' || permisoVer === true) {
+        oportunidadesFiltradas = todasOportunidades;
+      } else if (permisoVer === false) {
+        oportunidadesFiltradas = [];
+      }
+
+      setOportunidades(oportunidadesFiltradas);
       setClientes(clientesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setEmpresas(empresasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setUsuarios(usuariosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -3502,11 +5671,74 @@ function OportunidadesModule() {
   const handleDelete = async (id) => {
     if (window.confirm('¿Eliminar esta oportunidad?')) {
       try {
+        // Obtener la oportunidad antes de borrarla para ver si tiene leadId
+        const oportunidad = oportunidades.find(op => op.id === id) || allOportunidades.find(op => op.id === id);
+
+        // Si la oportunidad vino de un lead, revertir el estado del lead
+        if (oportunidad && oportunidad.leadId) {
+          await updateDoc(doc(db, 'leads', oportunidad.leadId), {
+            estado: 'calificado',
+            fechaConversion: null
+          });
+        }
+
+        // Borrar la oportunidad
         await deleteDoc(doc(db, 'oportunidades', id));
         loadData();
+        alert('✅ Oportunidad eliminada. El lead ha regresado a estado "Calificado".');
       } catch (error) {
         console.error("Error deleting oportunidad:", error);
+        alert('Error eliminando oportunidad: ' + error.message);
       }
+    }
+  };
+
+  const handleConvertirACliente = async (oportunidad) => {
+    try {
+      // Verificar si el cliente ya existe
+      const clienteExistente = clientes.find(c => c.email === oportunidad.clienteEmail);
+
+      if (clienteExistente) {
+        alert(`⚠️ Ya existe un cliente con el email ${oportunidad.clienteEmail}. La oportunidad se vinculará a ese cliente.`);
+
+        // Actualizar oportunidad para marcar que ya se convirtió
+        await updateDoc(doc(db, 'oportunidades', oportunidad.id), {
+          convertidoACliente: true,
+          clienteIdFinal: clienteExistente.id,
+          fechaConversion: new Date().toISOString()
+        });
+      } else {
+        // Crear nuevo cliente
+        const nuevoClienteRef = await addDoc(collection(db, 'clientes'), {
+          nombre: oportunidad.clienteNombre,
+          empresaId: oportunidad.empresaId || '',
+          email: oportunidad.clienteEmail || '',
+          telefono: '',
+          cargo: '',
+          industria: '',
+          ubicacion: '',
+          etiquetas: 'Cliente Ganado',
+          notas: `Cliente convertido desde oportunidad ganada.\n\nOportunidad: ${oportunidad.nombre}\nValor cerrado: $${oportunidad.valor}\nNotas de la oportunidad:\n${oportunidad.notas}`,
+          activo: true,
+          fechaCreacion: new Date().toISOString(),
+          origenOportunidadId: oportunidad.id
+        });
+
+        // Actualizar oportunidad
+        await updateDoc(doc(db, 'oportunidades', oportunidad.id), {
+          convertidoACliente: true,
+          clienteIdFinal: nuevoClienteRef.id,
+          fechaConversion: new Date().toISOString()
+        });
+
+        alert('✅ ¡Oportunidad convertida a Cliente exitosamente!');
+      }
+
+      setShowConvertirClienteModal(null);
+      loadData();
+    } catch (error) {
+      console.error('Error convirtiendo a cliente:', error);
+      alert('Error: ' + error.message);
     }
   };
 
@@ -3569,8 +5801,101 @@ function OportunidadesModule() {
     const oportunidad = oportunidades.find(o => o.id === oportunidadId);
 
     if (oportunidad && oportunidad.etapa !== nuevaEtapa) {
+      // Validaciones de información requerida por etapa
+      const validaciones = {
+        'Propuesta Enviada': () => {
+          if (!oportunidad.valor || oportunidad.valor === 0) {
+            alert('⚠️ Debes especificar un valor para la oportunidad antes de enviar propuesta.');
+            return false;
+          }
+          if (!oportunidad.notas || oportunidad.notas.trim() === '') {
+            alert('⚠️ Agrega notas con los detalles de la propuesta antes de mover a esta etapa.');
+            return false;
+          }
+          return true;
+        },
+        'Negociación': () => {
+          const etapaPreviaValida = ['Propuesta Enviada', 'Negociación'].includes(oportunidad.etapa);
+          if (!etapaPreviaValida) {
+            alert('⚠️ Debes pasar por "Propuesta Enviada" antes de negociar.');
+            return false;
+          }
+          if (!oportunidad.fechaEstimadaCierre) {
+            alert('⚠️ Define una fecha estimada de cierre antes de negociar.');
+            return false;
+          }
+          return true;
+        },
+        'Cerrado Ganado': () => {
+          if (!oportunidad.valor || oportunidad.valor === 0) {
+            alert('⚠️ Define el valor final de la oportunidad.');
+            return false;
+          }
+          if (!oportunidad.fechaEstimadaCierre) {
+            alert('⚠️ Define la fecha de cierre.');
+            return false;
+          }
+          const etapaPreviaValida = ['Negociación', 'Propuesta Enviada'].includes(oportunidad.etapa);
+          if (!etapaPreviaValida) {
+            alert('⚠️ Debes negociar antes de cerrar como ganado.');
+            return false;
+          }
+          return true;
+        }
+      };
+
+      // Ejecutar validación si existe para la nueva etapa
+      if (validaciones[nuevaEtapa] && !validaciones[nuevaEtapa]()) {
+        return; // No proceder si falla la validación
+      }
+
       try {
         await updateDoc(doc(db, 'oportunidades', oportunidadId), { etapa: nuevaEtapa });
+
+        // Crear tarea automática según la nueva etapa
+        const tareasAutomaticas = {
+          'Contacto Inicial': {
+            titulo: `Realizar seguimiento inicial: ${oportunidad.nombre}`,
+            descripcion: `Contactar al cliente para discutir necesidades y expectativas.\nCliente: ${oportunidad.clienteNombre}\nEmail: ${oportunidad.clienteEmail || 'No especificado'}`,
+            dias: 1
+          },
+          'Propuesta Enviada': {
+            titulo: `Hacer seguimiento de propuesta: ${oportunidad.nombre}`,
+            descripcion: `Contactar al cliente para resolver dudas sobre la propuesta enviada.\nValor: $${oportunidad.valor}\nCliente: ${oportunidad.clienteNombre}`,
+            dias: 2
+          },
+          'Negociación': {
+            titulo: `Negociar términos: ${oportunidad.nombre}`,
+            descripcion: `Revisar términos, ajustar propuesta y cerrar condiciones finales.\nValor: $${oportunidad.valor}\nCliente: ${oportunidad.clienteNombre}`,
+            dias: 3
+          },
+          'Cerrado Ganado': {
+            titulo: `Iniciar onboarding: ${oportunidad.nombre}`,
+            descripcion: `Preparar documentación, contratos y proceso de onboarding del cliente.\nCliente: ${oportunidad.clienteNombre}\nValor cerrado: $${oportunidad.valor}`,
+            dias: 1
+          }
+        };
+
+        // Solo crear tarea para etapas que no sean "Cerrado Perdido"
+        if (nuevaEtapa !== 'Cerrado Perdido' && tareasAutomaticas[nuevaEtapa]) {
+          const tarea = tareasAutomaticas[nuevaEtapa];
+          const fechaVencimiento = new Date();
+          fechaVencimiento.setDate(fechaVencimiento.getDate() + tarea.dias);
+
+          await addDoc(collection(db, 'tareas'), {
+            titulo: tarea.titulo,
+            descripcion: tarea.descripcion,
+            prioridad: nuevaEtapa === 'Cerrado Ganado' ? 'urgente' : 'alta',
+            estado: 'pendiente',
+            fechaCreacion: new Date().toISOString(),
+            fechaVencimiento: fechaVencimiento.toISOString(),
+            responsable: oportunidad.usuarioResponsableId || 'Sin asignar',
+            relacionadoCon: 'oportunidad',
+            relacionadoId: oportunidadId,
+            relacionadoNombre: oportunidad.nombre
+          });
+        }
+
         loadData();
       } catch (error) {
         console.error('Error actualizando etapa:', error);
@@ -3584,6 +5909,83 @@ function OportunidadesModule() {
 
   const getInteraccionesPorOportunidad = (oportunidadId) => {
     return interacciones.filter(i => i.oportunidadId === oportunidadId);
+  };
+
+  const handleAbrirDetalle = async (oportunidad) => {
+    setOportunidadDetalle(oportunidad);
+    setShowNuevaInteraccion(false);
+    setShowNuevaTarea(false);
+
+    // Cargar tareas relacionadas
+    try {
+      const tareasSnap = await getDocs(collection(db, 'tareas'));
+      const todasTareas = tareasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const tareasOportunidad = todasTareas.filter(t => t.relacionadoId === oportunidad.id && t.relacionadoCon === 'oportunidad');
+      setTareasRelacionadas(tareasOportunidad);
+    } catch (error) {
+      console.error('Error cargando tareas:', error);
+      setTareasRelacionadas([]);
+    }
+  };
+
+  const handleGuardarInteraccion = async (e) => {
+    e.preventDefault();
+    try {
+      await addDoc(collection(db, 'interacciones'), {
+        ...nuevaInteraccion,
+        oportunidadId: oportunidadDetalle.id,
+        clienteId: oportunidadDetalle.clienteId,
+        fechaCreacion: new Date().toISOString()
+      });
+
+      // Recargar datos
+      await loadData();
+
+      // Resetear formulario
+      setNuevaInteraccion({
+        tipo: 'llamada',
+        descripcion: '',
+        resultado: '',
+        fecha: new Date().toISOString().split('T')[0]
+      });
+      setShowNuevaInteraccion(false);
+    } catch (error) {
+      console.error('Error guardando interacción:', error);
+      alert('Error al guardar la interacción');
+    }
+  };
+
+  const handleGuardarTarea = async (e) => {
+    e.preventDefault();
+    try {
+      await addDoc(collection(db, 'tareas'), {
+        ...nuevaTarea,
+        estado: 'pendiente',
+        fechaCreacion: new Date().toISOString(),
+        responsable: oportunidadDetalle.usuarioResponsableId || currentUser.id,
+        relacionadoCon: 'oportunidad',
+        relacionadoId: oportunidadDetalle.id,
+        relacionadoNombre: oportunidadDetalle.nombre
+      });
+
+      // Recargar tareas
+      const tareasSnap = await getDocs(collection(db, 'tareas'));
+      const todasTareas = tareasSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const tareasOportunidad = todasTareas.filter(t => t.relacionadoId === oportunidadDetalle.id && t.relacionadoCon === 'oportunidad');
+      setTareasRelacionadas(tareasOportunidad);
+
+      // Resetear formulario
+      setNuevaTarea({
+        titulo: '',
+        descripcion: '',
+        prioridad: 'media',
+        fechaVencimiento: ''
+      });
+      setShowNuevaTarea(false);
+    } catch (error) {
+      console.error('Error guardando tarea:', error);
+      alert('Error al guardar la tarea');
+    }
   };
 
   const getTipoInteraccionIcon = (tipo) => {
@@ -3834,9 +6236,13 @@ function OportunidadesModule() {
                       key={oportunidad.id}
                       draggable
                       onDragStart={(e) => handleDragStart(e, oportunidad.id)}
-                      className="bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-move"
+                      onClick={() => handleAbrirDetalle(oportunidad)}
+                      className="bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md hover:border-orange-400 transition-all cursor-pointer"
                     >
-                      <h5 className="font-semibold text-gray-900 mb-2">{oportunidad.nombre}</h5>
+                      <h5 className="font-semibold text-gray-900 mb-2 flex items-center justify-between">
+                        <span>{oportunidad.nombre}</span>
+                        <span className="text-xs text-gray-400">👁️ Ver detalle</span>
+                      </h5>
                       <div className="space-y-1 text-sm text-gray-600 mb-3">
                         <p>👤 {getClienteNombre(oportunidad.clienteId)}</p>
                         <p className="font-semibold text-green-600">{formatCurrency(oportunidad.valor)}</p>
@@ -3875,12 +6281,25 @@ function OportunidadesModule() {
                           </div>
                           <span className="text-xs text-gray-500">{oportunidad.probabilidad}%</span>
                         </div>
-                        <button
-                          onClick={() => handleEdit(oportunidad)}
-                          className="text-blue-600 hover:text-blue-900 text-xs"
-                        >
-                          Editar
-                        </button>
+                        <div className="flex gap-2">
+                          {oportunidad.etapa === 'Cerrado Ganado' && !oportunidad.convertidoACliente && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowConvertirClienteModal(oportunidad);
+                              }}
+                              className="bg-green-600 text-white px-3 py-1 rounded text-xs font-semibold hover:bg-green-700 transition-all"
+                            >
+                              → Cliente
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleEdit(oportunidad)}
+                            className="text-blue-600 hover:text-blue-900 text-xs"
+                          >
+                            Editar
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -3897,14 +6316,26 @@ function OportunidadesModule() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Responsable</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Probabilidad</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prob. Manual</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gradient-to-r from-purple-50 to-pink-50">
+                    <div className="flex items-center gap-1">
+                      <Award size={16} className="text-purple-600" />
+                      <span>IA Prob.</span>
+                    </div>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gradient-to-r from-pink-50 to-purple-50">Siguiente Acción</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Etapa</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cierre Est.</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {oportunidades.map((oportunidad) => (
+                {oportunidades.map((oportunidad) => {
+                  // IA Predictiva
+                  const aiProbabilidad = calcularProbabilidadCierre(oportunidad, interacciones);
+                  const siguienteAccion = recomendarSiguienteAccion(oportunidad, 'oportunidad', interacciones);
+
+                  return (
                   <tr key={oportunidad.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{oportunidad.nombre}</div>
@@ -3924,6 +6355,35 @@ function OportunidadesModule() {
                           ></div>
                         </div>
                         <span className="text-sm text-gray-600">{oportunidad.probabilidad}%</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 bg-gradient-to-r from-purple-50 to-pink-50">
+                      <div className="flex items-center gap-2">
+                        <Award size={16} className={aiProbabilidad >= 70 ? 'text-green-600' : aiProbabilidad >= 40 ? 'text-yellow-600' : 'text-red-600'} />
+                        <div className="w-20 bg-gray-200 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full ${aiProbabilidad >= 70 ? 'bg-green-600' : aiProbabilidad >= 40 ? 'bg-yellow-600' : 'bg-red-600'}`}
+                            style={{ width: `${aiProbabilidad}%` }}
+                          ></div>
+                        </div>
+                        <span className={`text-sm font-bold ${aiProbabilidad >= 70 ? 'text-green-600' : aiProbabilidad >= 40 ? 'text-yellow-600' : 'text-red-600'}`}>
+                          {aiProbabilidad}%
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 bg-gradient-to-r from-pink-50 to-purple-50">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{siguienteAccion.icono}</span>
+                          <span className="font-semibold text-xs text-gray-900">{siguienteAccion.accion}</span>
+                        </div>
+                        <div className={`text-xs px-2 py-0.5 rounded inline-block ${
+                          siguienteAccion.prioridad === 'alta' ? 'bg-red-100 text-red-800' :
+                          siguienteAccion.prioridad === 'media' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {siguienteAccion.prioridad.toUpperCase()}
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -3947,7 +6407,8 @@ function OportunidadesModule() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -4047,6 +6508,421 @@ function OportunidadesModule() {
               >
                 Cerrar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Conversión a Cliente */}
+      {showConvertirClienteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowConvertirClienteModal(null)}>
+          <div className="bg-white rounded-xl shadow-2xl p-6 lg:p-8 max-w-2xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                <ArrowRight className="text-green-600" size={28} />
+                Convertir a Cliente
+              </h3>
+              <button onClick={() => setShowConvertirClienteModal(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+                <p className="font-semibold text-green-900">{showConvertirClienteModal.nombre}</p>
+                <p className="text-green-700">{showConvertirClienteModal.clienteNombre}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Valor Cerrado</p>
+                  <p className="text-lg font-semibold text-green-600">${showConvertirClienteModal.valor}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Email</p>
+                  <p className="text-base">{showConvertirClienteModal.clienteEmail || 'No especificado'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Probabilidad</p>
+                  <p className="text-base">{showConvertirClienteModal.probabilidad}%</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Fecha Cierre</p>
+                  <p className="text-base">{showConvertirClienteModal.fechaEstimadaCierre ? new Date(showConvertirClienteModal.fechaEstimadaCierre).toLocaleDateString('es-MX') : 'No especificada'}</p>
+                </div>
+              </div>
+
+              {showConvertirClienteModal.notas && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">Notas de la Oportunidad</p>
+                  <div className="bg-gray-50 rounded-lg p-4 max-h-40 overflow-y-auto">
+                    <p className="text-gray-900 whitespace-pre-wrap">{showConvertirClienteModal.notas}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-900">
+                  ℹ️ Se creará un nuevo cliente con la información de esta oportunidad. Si ya existe un cliente con el mismo email, la oportunidad se vinculará a ese cliente existente.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => handleConvertirACliente(showConvertirClienteModal)}
+                  className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <ArrowRight size={20} />
+                  Convertir a Cliente
+                </button>
+                <button
+                  onClick={() => setShowConvertirClienteModal(null)}
+                  className="px-6 py-3 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Panel de Detalle Lateral - Historial Completo */}
+      {oportunidadDetalle && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          {/* Overlay */}
+          <div
+            className="absolute inset-0 bg-black bg-opacity-50 transition-opacity"
+            onClick={() => setOportunidadDetalle(null)}
+          />
+
+          {/* Panel lateral */}
+          <div className="absolute inset-y-0 right-0 max-w-2xl w-full bg-white shadow-2xl overflow-y-auto">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-6 sticky top-0 z-10">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-2xl font-bold text-white">Detalle de Oportunidad</h3>
+                <button
+                  onClick={() => setOportunidadDetalle(null)}
+                  className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+              <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
+                <h4 className="text-xl font-bold text-white mb-2">{oportunidadDetalle.nombre}</h4>
+                <div className="flex items-center gap-4 text-white text-sm">
+                  <span className={`px-3 py-1 rounded-full font-semibold ${getEtapaColor(oportunidadDetalle.etapa)}`}>
+                    {oportunidadDetalle.etapa}
+                  </span>
+                  <span className="font-bold text-lg">{formatCurrency(oportunidadDetalle.valor)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Contenido */}
+            <div className="p-6 space-y-6">
+              {/* Información Básica */}
+              <div className="bg-white rounded-xl border-2 border-gray-200 p-5">
+                <h5 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <Info size={20} className="text-blue-600" />
+                  Información General
+                </h5>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-500 font-medium">Cliente</p>
+                    <p className="text-gray-900 font-semibold">{getClienteNombre(oportunidadDetalle.clienteId)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 font-medium">Empresa</p>
+                    <p className="text-gray-900">{getEmpresaNombre(oportunidadDetalle.empresaId)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 font-medium">Responsable</p>
+                    <p className="text-gray-900">{getUsuarioNombre(oportunidadDetalle.usuarioResponsableId)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 font-medium">Probabilidad</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="w-20 bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full"
+                          style={{ width: `${oportunidadDetalle.probabilidad}%` }}
+                        />
+                      </div>
+                      <span className="text-gray-900 font-semibold">{oportunidadDetalle.probabilidad}%</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 font-medium">Fecha Estimada Cierre</p>
+                    <p className="text-gray-900">{formatDate(oportunidadDetalle.fechaEstimadaCierre)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 font-medium">Creada</p>
+                    <p className="text-gray-900">{formatDate(oportunidadDetalle.fechaCreacion)}</p>
+                  </div>
+                </div>
+
+                {oportunidadDetalle.notas && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <p className="text-gray-500 font-medium mb-2">Notas</p>
+                    <div className="bg-gray-50 rounded-lg p-3 text-gray-900 text-sm">
+                      {oportunidadDetalle.notas}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Timeline de Interacciones */}
+              <div className="bg-white rounded-xl border-2 border-gray-200 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h5 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <Phone size={20} className="text-green-600" />
+                    Interacciones ({getInteraccionesPorOportunidad(oportunidadDetalle.id).length})
+                  </h5>
+                  <button
+                    onClick={() => setShowNuevaInteraccion(!showNuevaInteraccion)}
+                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg text-sm font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <Plus size={16} />
+                    {showNuevaInteraccion ? 'Cancelar' : 'Nueva'}
+                  </button>
+                </div>
+
+                {/* Formulario Nueva Interacción */}
+                {showNuevaInteraccion && (
+                  <form onSubmit={handleGuardarInteraccion} className="mb-4 p-4 bg-green-50 rounded-lg border-2 border-green-200">
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Tipo</label>
+                          <select
+                            required
+                            value={nuevaInteraccion.tipo}
+                            onChange={(e) => setNuevaInteraccion({...nuevaInteraccion, tipo: e.target.value})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-green-500 focus:outline-none"
+                          >
+                            <option value="llamada">📞 Llamada</option>
+                            <option value="email">📧 Email</option>
+                            <option value="reunion">🤝 Reunión</option>
+                            <option value="mensaje">💬 Mensaje</option>
+                            <option value="otro">📝 Otro</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Fecha</label>
+                          <input
+                            type="date"
+                            required
+                            value={nuevaInteraccion.fecha}
+                            onChange={(e) => setNuevaInteraccion({...nuevaInteraccion, fecha: e.target.value})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-green-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Descripción *</label>
+                        <textarea
+                          required
+                          rows="2"
+                          value={nuevaInteraccion.descripcion}
+                          onChange={(e) => setNuevaInteraccion({...nuevaInteraccion, descripcion: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-green-500 focus:outline-none"
+                          placeholder="¿Qué pasó en esta interacción?"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Resultado</label>
+                        <input
+                          type="text"
+                          value={nuevaInteraccion.resultado}
+                          onChange={(e) => setNuevaInteraccion({...nuevaInteraccion, resultado: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-green-500 focus:outline-none"
+                          placeholder="Resultado o próximos pasos"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-semibold transition-colors"
+                      >
+                        Guardar Interacción
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Lista de Interacciones (más nuevo primero) */}
+                {getInteraccionesPorOportunidad(oportunidadDetalle.id).length === 0 && !showNuevaInteraccion ? (
+                  <p className="text-gray-500 text-sm italic">No hay interacciones registradas</p>
+                ) : (
+                  <div className="space-y-3">
+                    {getInteraccionesPorOportunidad(oportunidadDetalle.id)
+                      .sort((a, b) => new Date(b.fechaCreacion || b.fecha) - new Date(a.fechaCreacion || a.fecha))
+                      .map(interaccion => (
+                        <div key={interaccion.id} className="flex gap-3 pb-3 border-b border-gray-100 last:border-0">
+                          <div className="text-2xl">{getTipoInteraccionIcon(interaccion.tipo)}</div>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-semibold text-gray-900 capitalize">{interaccion.tipo}</span>
+                              <span className="text-xs text-gray-500">{formatDate(interaccion.fecha)}</span>
+                            </div>
+                            <p className="text-sm text-gray-700">{interaccion.descripcion}</p>
+                            {interaccion.resultado && (
+                              <p className="text-xs text-gray-600 mt-1">
+                                <span className="font-medium">Resultado:</span> {interaccion.resultado}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Tareas Relacionadas */}
+              <div className="bg-white rounded-xl border-2 border-gray-200 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h5 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <ClipboardList size={20} className="text-purple-600" />
+                    Tareas ({tareasRelacionadas.length})
+                  </h5>
+                  <button
+                    onClick={() => setShowNuevaTarea(!showNuevaTarea)}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-sm font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <Plus size={16} />
+                    {showNuevaTarea ? 'Cancelar' : 'Nueva'}
+                  </button>
+                </div>
+
+                {/* Formulario Nueva Tarea */}
+                {showNuevaTarea && (
+                  <form onSubmit={handleGuardarTarea} className="mb-4 p-4 bg-purple-50 rounded-lg border-2 border-purple-200">
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Título *</label>
+                        <input
+                          type="text"
+                          required
+                          value={nuevaTarea.titulo}
+                          onChange={(e) => setNuevaTarea({...nuevaTarea, titulo: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none"
+                          placeholder="¿Qué hay que hacer?"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Descripción</label>
+                        <textarea
+                          rows="2"
+                          value={nuevaTarea.descripcion}
+                          onChange={(e) => setNuevaTarea({...nuevaTarea, descripcion: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none"
+                          placeholder="Detalles de la tarea..."
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Prioridad</label>
+                          <select
+                            value={nuevaTarea.prioridad}
+                            onChange={(e) => setNuevaTarea({...nuevaTarea, prioridad: e.target.value})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none"
+                          >
+                            <option value="baja">Baja</option>
+                            <option value="media">Media</option>
+                            <option value="alta">Alta</option>
+                            <option value="urgente">Urgente</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Fecha Vencimiento *</label>
+                          <input
+                            type="date"
+                            required
+                            value={nuevaTarea.fechaVencimiento}
+                            onChange={(e) => setNuevaTarea({...nuevaTarea, fechaVencimiento: e.target.value})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg font-semibold transition-colors"
+                      >
+                        Guardar Tarea
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Lista de Tareas (más nuevo primero) */}
+                {tareasRelacionadas.length === 0 && !showNuevaTarea ? (
+                  <p className="text-gray-500 text-sm italic">No hay tareas relacionadas</p>
+                ) : (
+                  <div className="space-y-2">
+                    {tareasRelacionadas
+                      .sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion))
+                      .map(tarea => (
+                        <div key={tarea.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                          <div className="mt-0.5">
+                            {tarea.estado === 'completada' ? (
+                              <span className="text-green-600 text-xl">✓</span>
+                            ) : (
+                              <span className="text-orange-500 text-xl">○</span>
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-start justify-between mb-1">
+                              <p className="font-semibold text-gray-900 text-sm">{tarea.titulo}</p>
+                              <span className={`text-xs px-2 py-1 rounded font-semibold ${
+                                tarea.estado === 'completada' ? 'bg-green-100 text-green-800' :
+                                tarea.estado === 'en_progreso' ? 'bg-blue-100 text-blue-800' :
+                                'bg-orange-100 text-orange-800'
+                              }`}>
+                                {tarea.estado === 'completada' ? 'Completada' :
+                                 tarea.estado === 'en_progreso' ? 'En Progreso' : 'Pendiente'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-600 mb-1">{tarea.descripcion}</p>
+                            <div className="flex items-center gap-4 text-xs text-gray-500">
+                              <span>📅 Vence: {formatDate(tarea.fechaVencimiento)}</span>
+                              <span className={`font-semibold ${
+                                tarea.prioridad === 'urgente' ? 'text-red-600' :
+                                tarea.prioridad === 'alta' ? 'text-orange-600' :
+                                tarea.prioridad === 'media' ? 'text-yellow-600' :
+                                'text-gray-600'
+                              }`}>
+                                {tarea.prioridad?.toUpperCase()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Botones de acción */}
+              <div className="sticky bottom-0 bg-white border-t-2 border-gray-200 pt-4">
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      handleEdit(oportunidadDetalle);
+                      setOportunidadDetalle(null);
+                    }}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Edit2 size={18} />
+                    Editar Oportunidad
+                  </button>
+                  <button
+                    onClick={() => setOportunidadDetalle(null)}
+                    className="px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-semibold transition-colors"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -5192,7 +8068,1988 @@ function IntegracionesModule() {
   );
 }
 
+// Módulo Login/Autenticación
+function LoginModule({ onLogin }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      // Buscar usuario en Firestore por email
+      const usuariosSnapshot = await getDocs(collection(db, 'usuarios'));
+      const usuario = usuariosSnapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .find(u => u.email === email);
+
+      if (!usuario) {
+        setError('Usuario no encontrado');
+        setLoading(false);
+        return;
+      }
+
+      if (!usuario.activo) {
+        setError('Usuario inactivo - Contacta al administrador');
+        setLoading(false);
+        return;
+      }
+
+      // Por ahora, password simple (en producción usar Firebase Auth)
+      if (password === 'admin123' || password === usuario.password || !usuario.password) {
+        // Login exitoso
+        onLogin(usuario);
+      } else {
+        setError('Contraseña incorrecta');
+      }
+    } catch (err) {
+      console.error('Error en login:', err);
+      setError('Error al iniciar sesión');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-orange-600 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        {/* Logo/Header */}
+        <div className="text-center mb-8">
+          <div className="bg-gradient-to-r from-blue-900 to-orange-500 text-white rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-4">
+            <Briefcase size={40} />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">GRX CRM</h1>
+          <p className="text-gray-600">Sistema de Gestión de Relaciones con Clientes</p>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Email
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-200 transition"
+              placeholder="tu@email.com"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Contraseña
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring focus:ring-blue-200 transition"
+              placeholder="••••••••"
+            />
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+              <p className="text-red-700 text-sm font-semibold">{error}</p>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-blue-900 to-orange-500 text-white py-3 rounded-lg font-bold text-lg hover:shadow-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+          </button>
+        </form>
+
+        {/* Info para demo */}
+        <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <p className="text-xs text-blue-800 font-semibold mb-2">🔐 Demo - Acceso rápido:</p>
+          <p className="text-xs text-blue-700">Usa cualquier email de usuario existente</p>
+          <p className="text-xs text-blue-700">Contraseña: <code className="bg-blue-100 px-2 py-1 rounded">admin123</code></p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Módulo Productos
+function ProductosModule({ currentUser }) {
+  const [productos, setProductos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [formData, setFormData] = useState({
+    nombre: '',
+    descripcion: '',
+    precio: '',
+    categoria: 'servicio',
+    sku: '',
+    activo: true,
+    stock: '',
+    empresaId: currentUser?.empresaId || ''
+  });
+
+  const categorias = [
+    { value: 'servicio', label: 'Servicio', icon: '🔧' },
+    { value: 'software', label: 'Software', icon: '💻' },
+    { value: 'licencia', label: 'Licencia', icon: '📜' },
+    { value: 'hardware', label: 'Hardware', icon: '⚙️' },
+    { value: 'consultoria', label: 'Consultoría', icon: '📊' },
+    { value: 'otro', label: 'Otro', icon: '📦' }
+  ];
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const productosSnap = await getDocs(collection(db, 'productos'));
+      setProductos(productosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (error) {
+      console.error('Error cargando productos:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingId) {
+        await updateDoc(doc(db, 'productos', editingId), formData);
+        alert('Producto actualizado exitosamente!');
+      } else {
+        await addDoc(collection(db, 'productos'), {
+          ...formData,
+          fechaCreacion: new Date().toISOString(),
+          creadoPor: currentUser?.id
+        });
+        alert('Producto creado exitosamente!');
+      }
+      resetForm();
+      loadData();
+    } catch (error) {
+      console.error('Error guardando producto:', error);
+      alert('Error: ' + error.message);
+    }
+  };
+
+  const handleEdit = (producto) => {
+    setFormData({
+      nombre: producto.nombre,
+      descripcion: producto.descripcion || '',
+      precio: producto.precio,
+      categoria: producto.categoria,
+      sku: producto.sku || '',
+      activo: producto.activo,
+      stock: producto.stock || '',
+      empresaId: producto.empresaId || ''
+    });
+    setEditingId(producto.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('¿Eliminar este producto?')) {
+      try {
+        await deleteDoc(doc(db, 'productos', id));
+        loadData();
+      } catch (error) {
+        console.error('Error eliminando producto:', error);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      nombre: '',
+      descripcion: '',
+      precio: '',
+      categoria: 'servicio',
+      sku: '',
+      activo: true,
+      stock: '',
+      empresaId: currentUser?.empresaId || ''
+    });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  const productosFiltrados = productos.filter(p =>
+    p.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.sku?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-orange-500"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
+        <h2 className="text-4xl font-bold">Productos</h2>
+        <p className="text-blue-100 mt-2">Catálogo de productos y servicios</p>
+      </div>
+
+      {/* Controles superiores */}
+      <div className="bg-white rounded-xl shadow-md p-6 mb-8 border-l-4 border-orange-500">
+        <div className="flex items-center justify-between gap-4">
+          <input
+            type="text"
+            placeholder="Buscar por nombre o SKU..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            onClick={() => exportToExcel(productos, 'productos')}
+            className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700"
+          >
+            <Download size={24} />
+            <span className="text-xl">Exportar</span>
+          </button>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100"
+          >
+            {showForm ? <X size={24} /> : <Plus size={24} />}
+            <span className="text-xl">{showForm ? 'Cancelar' : 'Nuevo Producto'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Formulario */}
+      {showForm && (
+        <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
+          <h3 className="text-2xl font-semibold mb-6 text-blue-900">
+            {editingId ? 'Editar Producto' : 'Nuevo Producto'}
+          </h3>
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Nombre *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.nombre}
+                  onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">SKU</label>
+                <input
+                  type="text"
+                  value={formData.sku}
+                  onChange={(e) => setFormData({...formData, sku: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Precio *</label>
+                <input
+                  type="number"
+                  required
+                  step="0.01"
+                  value={formData.precio}
+                  onChange={(e) => setFormData({...formData, precio: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Categoría *</label>
+                <select
+                  required
+                  value={formData.categoria}
+                  onChange={(e) => setFormData({...formData, categoria: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                >
+                  {categorias.map(cat => (
+                    <option key={cat.value} value={cat.value}>{cat.icon} {cat.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Stock</label>
+                <input
+                  type="number"
+                  value={formData.stock}
+                  onChange={(e) => setFormData({...formData, stock: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={formData.activo}
+                  onChange={(e) => setFormData({...formData, activo: e.target.checked})}
+                  className="w-5 h-5 mr-2"
+                />
+                <label className="text-sm font-semibold text-gray-700">Producto Activo</label>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Descripción</label>
+                <textarea
+                  value={formData.descripcion}
+                  onChange={(e) => setFormData({...formData, descripcion: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                  rows="3"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex gap-4">
+              <button type="submit" className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700">
+                <Save size={20} />
+                <span>Guardar</span>
+              </button>
+              <button type="button" onClick={resetForm} className="bg-gray-300 px-6 py-3 rounded-lg font-semibold hover:bg-gray-400">
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Lista de productos */}
+      {!showForm && (
+        <div className="bg-white rounded-xl shadow-md p-8 border-l-4 border-orange-500">
+          <h3 className="text-2xl font-semibold mb-6 text-blue-900">
+            Listado de Productos ({productosFiltrados.length})
+          </h3>
+          {productosFiltrados.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">No hay productos registrados</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-sm font-bold text-gray-700">Producto</th>
+                    <th className="px-6 py-3 text-left text-sm font-bold text-gray-700">SKU</th>
+                    <th className="px-6 py-3 text-left text-sm font-bold text-gray-700">Categoría</th>
+                    <th className="px-6 py-3 text-left text-sm font-bold text-gray-700">Precio</th>
+                    <th className="px-6 py-3 text-left text-sm font-bold text-gray-700">Stock</th>
+                    <th className="px-6 py-3 text-left text-sm font-bold text-gray-700">Estado</th>
+                    <th className="px-6 py-3 text-left text-sm font-bold text-gray-700">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productosFiltrados.map((producto) => {
+                    const categoria = categorias.find(c => c.value === producto.categoria);
+                    return (
+                      <tr key={producto.id} className="border-b border-gray-200 hover:bg-gray-50">
+                        <td className="px-6 py-4">
+                          <div>
+                            <p className="font-semibold text-gray-900">{producto.nombre}</p>
+                            {producto.descripcion && (
+                              <p className="text-sm text-gray-500">{producto.descripcion.substring(0, 60)}...</p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{producto.sku || '-'}</td>
+                        <td className="px-6 py-4">
+                          <span className="text-sm">{categoria?.icon} {categoria?.label}</span>
+                        </td>
+                        <td className="px-6 py-4 text-lg font-bold text-green-600">
+                          ${parseFloat(producto.precio).toLocaleString('es-MX', {minimumFractionDigits: 2})}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{producto.stock || '-'}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            producto.activo ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {producto.activo ? 'Activo' : 'Inactivo'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleEdit(producto)}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                            >
+                              <Edit2 size={20} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(producto.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                            >
+                              <Trash2 size={20} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Módulo Cotizaciones (Quotes)
+function CotizacionesModule({ currentUser }) {
+  const [cotizaciones, setCotizaciones] = useState([]);
+  const [productos, setProductos] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [oportunidades, setOportunidades] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterEstado, setFilterEstado] = useState('todas');
+
+  const [formData, setFormData] = useState({
+    numero: '',
+    clienteId: '',
+    oportunidadId: '',
+    fecha: new Date().toISOString().split('T')[0],
+    validezDias: 30,
+    items: [],
+    descuentoGlobal: 0,
+    notas: '',
+    terminosCondiciones: 'Pago: 50% anticipo, 50% contra entrega\nTiempo de entrega: 15 días hábiles\nGarantía: 12 meses',
+    estado: 'borrador'
+  });
+
+  const [nuevoItem, setNuevoItem] = useState({
+    productoId: '',
+    cantidad: 1,
+    precioUnitario: 0,
+    descuento: 0
+  });
+
+  const estados = [
+    { value: 'borrador', label: 'Borrador', color: 'bg-gray-100 text-gray-800' },
+    { value: 'enviada', label: 'Enviada', color: 'bg-blue-100 text-blue-800' },
+    { value: 'aceptada', label: 'Aceptada', color: 'bg-green-100 text-green-800' },
+    { value: 'rechazada', label: 'Rechazada', color: 'bg-red-100 text-red-800' }
+  ];
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [cotizacionesSnap, productosSnap, clientesSnap, oportunidadesSnap] = await Promise.all([
+        getDocs(collection(db, 'cotizaciones')),
+        getDocs(collection(db, 'productos')),
+        getDocs(collection(db, 'clientes')),
+        getDocs(collection(db, 'oportunidades'))
+      ]);
+
+      const cotizacionesList = cotizacionesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      cotizacionesList.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+      setCotizaciones(cotizacionesList);
+      setProductos(productosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setClientes(clientesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setOportunidades(oportunidadesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generarNumero = () => {
+    const año = new Date().getFullYear();
+    const numero = cotizaciones.length + 1;
+    return `COT-${año}-${String(numero).padStart(4, '0')}`;
+  };
+
+  const agregarItem = () => {
+    if (!nuevoItem.productoId) {
+      alert('Selecciona un producto');
+      return;
+    }
+
+    const producto = productos.find(p => p.id === nuevoItem.productoId);
+    const item = {
+      productoId: producto.id,
+      nombre: producto.nombre,
+      descripcion: producto.descripcion,
+      cantidad: parseFloat(nuevoItem.cantidad) || 1,
+      precioUnitario: parseFloat(nuevoItem.precioUnitario) || producto.precio,
+      descuento: parseFloat(nuevoItem.descuento) || 0
+    };
+
+    setFormData({
+      ...formData,
+      items: [...formData.items, item]
+    });
+
+    setNuevoItem({
+      productoId: '',
+      cantidad: 1,
+      precioUnitario: 0,
+      descuento: 0
+    });
+  };
+
+  const eliminarItem = (index) => {
+    const nuevosItems = formData.items.filter((_, i) => i !== index);
+    setFormData({ ...formData, items: nuevosItems });
+  };
+
+  const calcularSubtotal = (item) => {
+    const subtotal = item.cantidad * item.precioUnitario;
+    const descuento = subtotal * (item.descuento / 100);
+    return subtotal - descuento;
+  };
+
+  const calcularTotales = () => {
+    const subtotal = formData.items.reduce((sum, item) => sum + calcularSubtotal(item), 0);
+    const descuentoGlobal = subtotal * (formData.descuentoGlobal / 100);
+    const subtotalConDescuento = subtotal - descuentoGlobal;
+    const iva = subtotalConDescuento * 0.16;
+    const total = subtotalConDescuento + iva;
+
+    return { subtotal, descuentoGlobal, subtotalConDescuento, iva, total };
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (formData.items.length === 0) {
+      alert('Agrega al menos un producto a la cotización');
+      return;
+    }
+
+    try {
+      const totales = calcularTotales();
+      const cotizacionData = {
+        ...formData,
+        numero: editingId ? formData.numero : generarNumero(),
+        subtotal: totales.subtotal,
+        descuentoGlobalMonto: totales.descuentoGlobal,
+        iva: totales.iva,
+        total: totales.total,
+        creadoPor: currentUser.id,
+        fechaCreacion: editingId ? formData.fechaCreacion : new Date().toISOString(),
+        fechaModificacion: new Date().toISOString()
+      };
+
+      if (editingId) {
+        await updateDoc(doc(db, 'cotizaciones', editingId), cotizacionData);
+      } else {
+        await addDoc(collection(db, 'cotizaciones'), cotizacionData);
+      }
+
+      resetForm();
+      loadData();
+    } catch (error) {
+      console.error('Error guardando cotización:', error);
+      alert('Error al guardar la cotización');
+    }
+  };
+
+  const handleEdit = (cotizacion) => {
+    setEditingId(cotizacion.id);
+    setFormData({
+      numero: cotizacion.numero,
+      clienteId: cotizacion.clienteId,
+      oportunidadId: cotizacion.oportunidadId || '',
+      fecha: cotizacion.fecha,
+      validezDias: cotizacion.validezDias,
+      items: cotizacion.items,
+      descuentoGlobal: cotizacion.descuentoGlobal,
+      notas: cotizacion.notas,
+      terminosCondiciones: cotizacion.terminosCondiciones,
+      estado: cotizacion.estado
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('¿Eliminar esta cotización?')) {
+      try {
+        await deleteDoc(doc(db, 'cotizaciones', id));
+        loadData();
+      } catch (error) {
+        console.error('Error eliminando cotización:', error);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      numero: '',
+      clienteId: '',
+      oportunidadId: '',
+      fecha: new Date().toISOString().split('T')[0],
+      validezDias: 30,
+      items: [],
+      descuentoGlobal: 0,
+      notas: '',
+      terminosCondiciones: 'Pago: 50% anticipo, 50% contra entrega\nTiempo de entrega: 15 días hábiles\nGarantía: 12 meses',
+      estado: 'borrador'
+    });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  const handleExport = () => {
+    const dataToExport = cotizaciones.map(cot => ({
+      'Número': cot.numero,
+      'Cliente': clientes.find(c => c.id === cot.clienteId)?.nombre || 'N/A',
+      'Fecha': new Date(cot.fecha).toLocaleDateString(),
+      'Subtotal': `$${cot.subtotal?.toFixed(2)}`,
+      'IVA': `$${cot.iva?.toFixed(2)}`,
+      'Total': `$${cot.total?.toFixed(2)}`,
+      'Estado': estados.find(e => e.value === cot.estado)?.label,
+      'Validez': `${cot.validezDias} días`
+    }));
+    exportToExcel(dataToExport, 'Cotizaciones');
+  };
+
+  const cotizacionesFiltradas = cotizaciones.filter(cot => {
+    const cliente = clientes.find(c => c.id === cot.clienteId);
+    const matchSearch = !searchTerm ||
+      cot.numero?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      cliente?.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchEstado = filterEstado === 'todas' || cot.estado === filterEstado;
+
+    return matchSearch && matchEstado;
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-2xl text-gray-600">Cargando cotizaciones...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
+        <h2 className="text-4xl font-bold">Cotizaciones</h2>
+        <p className="text-blue-100 mt-2">Gestión de cotizaciones y propuestas comerciales</p>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-orange-500">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-2xl font-semibold text-blue-900">
+            {showForm ? (editingId ? 'Editar Cotización' : 'Nueva Cotización') : 'Lista de Cotizaciones'}
+          </h3>
+          {!showForm && (
+            <div className="flex gap-3">
+              <button
+                onClick={handleExport}
+                className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-all shadow-md"
+              >
+                <Download size={20} />
+                Exportar
+              </button>
+              <button
+                onClick={() => setShowForm(true)}
+                className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-3 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all shadow-md"
+              >
+                <Plus size={20} />
+                Nueva Cotización
+              </button>
+            </div>
+          )}
+        </div>
+
+        {showForm ? (
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Información básica */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Cliente *</label>
+                <select
+                  required
+                  value={formData.clienteId}
+                  onChange={(e) => setFormData({...formData, clienteId: e.target.value})}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                >
+                  <option value="">Seleccionar cliente...</option>
+                  {clientes.map(cliente => (
+                    <option key={cliente.id} value={cliente.id}>{cliente.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Oportunidad (opcional)</label>
+                <select
+                  value={formData.oportunidadId}
+                  onChange={(e) => setFormData({...formData, oportunidadId: e.target.value})}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                >
+                  <option value="">Sin vincular...</option>
+                  {oportunidades
+                    .filter(op => op.clienteId === formData.clienteId)
+                    .map(op => (
+                      <option key={op.id} value={op.id}>{op.nombre}</option>
+                    ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Fecha *</label>
+                <input
+                  type="date"
+                  required
+                  value={formData.fecha}
+                  onChange={(e) => setFormData({...formData, fecha: e.target.value})}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Validez (días)</label>
+                <input
+                  type="number"
+                  value={formData.validezDias}
+                  onChange={(e) => setFormData({...formData, validezDias: parseInt(e.target.value)})}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Descuento Global (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={formData.descuentoGlobal}
+                  onChange={(e) => setFormData({...formData, descuentoGlobal: parseFloat(e.target.value) || 0})}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Estado</label>
+                <select
+                  value={formData.estado}
+                  onChange={(e) => setFormData({...formData, estado: e.target.value})}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                >
+                  {estados.map(estado => (
+                    <option key={estado.value} value={estado.value}>{estado.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Items / Productos */}
+            <div className="border-2 border-gray-200 rounded-lg p-6 bg-gray-50">
+              <h4 className="text-lg font-bold text-gray-900 mb-4">Productos y Servicios</h4>
+
+              {/* Agregar Producto */}
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4 bg-white p-4 rounded-lg border border-gray-300">
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Producto</label>
+                  <select
+                    value={nuevoItem.productoId}
+                    onChange={(e) => {
+                      const producto = productos.find(p => p.id === e.target.value);
+                      setNuevoItem({
+                        ...nuevoItem,
+                        productoId: e.target.value,
+                        precioUnitario: producto?.precio || 0
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value="">Seleccionar...</option>
+                    {productos.map(producto => (
+                      <option key={producto.id} value={producto.id}>
+                        {producto.nombre} - ${producto.precio}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Cantidad</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    value={nuevoItem.cantidad}
+                    onChange={(e) => setNuevoItem({...nuevoItem, cantidad: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Precio Unit.</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={nuevoItem.precioUnitario}
+                    onChange={(e) => setNuevoItem({...nuevoItem, precioUnitario: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Desc. %</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={nuevoItem.descuento}
+                    onChange={(e) => setNuevoItem({...nuevoItem, descuento: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-orange-500 focus:outline-none"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={agregarItem}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-semibold transition-colors flex items-center justify-center gap-1"
+                  >
+                    <Plus size={16} />
+                    Agregar
+                  </button>
+                </div>
+              </div>
+
+              {/* Lista de Items */}
+              {formData.items.length === 0 ? (
+                <p className="text-gray-500 italic text-center py-6">No hay productos agregados</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-200">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-semibold">Producto</th>
+                        <th className="px-4 py-2 text-center text-xs font-semibold">Cant.</th>
+                        <th className="px-4 py-2 text-right text-xs font-semibold">Precio Unit.</th>
+                        <th className="px-4 py-2 text-right text-xs font-semibold">Desc. %</th>
+                        <th className="px-4 py-2 text-right text-xs font-semibold">Subtotal</th>
+                        <th className="px-4 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {formData.items.map((item, index) => (
+                        <tr key={index} className="bg-white hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-sm">{item.nombre}</div>
+                            <div className="text-xs text-gray-500">{item.descripcion}</div>
+                          </td>
+                          <td className="px-4 py-3 text-center text-sm">{item.cantidad}</td>
+                          <td className="px-4 py-3 text-right text-sm">${item.precioUnitario.toFixed(2)}</td>
+                          <td className="px-4 py-3 text-right text-sm">{item.descuento}%</td>
+                          <td className="px-4 py-3 text-right font-semibold text-sm">${calcularSubtotal(item).toFixed(2)}</td>
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => eliminarItem(index)}
+                              className="text-red-600 hover:text-red-800 transition-colors"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Totales */}
+              {formData.items.length > 0 && (
+                <div className="mt-6 bg-white rounded-lg p-4 border-2 border-gray-300">
+                  <div className="flex justify-end">
+                    <div className="w-64 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Subtotal:</span>
+                        <span className="font-semibold">${calcularTotales().subtotal.toFixed(2)}</span>
+                      </div>
+                      {formData.descuentoGlobal > 0 && (
+                        <div className="flex justify-between text-sm text-orange-600">
+                          <span>Descuento ({formData.descuentoGlobal}%):</span>
+                          <span>-${calcularTotales().descuentoGlobal.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">IVA (16%):</span>
+                        <span className="font-semibold">${calcularTotales().iva.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-lg font-bold border-t-2 border-gray-300 pt-2">
+                        <span>TOTAL:</span>
+                        <span className="text-green-600">${calcularTotales().total.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Notas y Términos */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Notas</label>
+                <textarea
+                  rows="4"
+                  value={formData.notas}
+                  onChange={(e) => setFormData({...formData, notas: e.target.value})}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                  placeholder="Notas adicionales para el cliente..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Términos y Condiciones</label>
+                <textarea
+                  rows="4"
+                  value={formData.terminosCondiciones}
+                  onChange={(e) => setFormData({...formData, terminosCondiciones: e.target.value})}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                  placeholder="Términos y condiciones de la cotización..."
+                />
+              </div>
+            </div>
+
+            {/* Botones */}
+            <div className="flex gap-4 pt-4">
+              <button
+                type="submit"
+                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-md font-semibold"
+              >
+                {editingId ? 'Actualizar' : 'Guardar'} Cotización
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all font-semibold"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            {/* Filtros */}
+            <div className="flex gap-4 mb-6">
+              <input
+                type="text"
+                placeholder="Buscar por número o cliente..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+              />
+              <select
+                value={filterEstado}
+                onChange={(e) => setFilterEstado(e.target.value)}
+                className="px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+              >
+                <option value="todas">Todas</option>
+                {estados.map(estado => (
+                  <option key={estado.value} value={estado.value}>{estado.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Lista */}
+            {cotizacionesFiltradas.length === 0 ? (
+              <div className="text-center py-12 bg-gray-50 rounded-lg">
+                <Target className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600 text-lg">No hay cotizaciones registradas</p>
+                <p className="text-gray-500 mt-2">Crea tu primera cotización</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Número</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Cliente</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Fecha</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Validez</th>
+                      <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase">Total</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Estado</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Items</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {cotizacionesFiltradas.map((cotizacion) => {
+                      const cliente = clientes.find(c => c.id === cotizacion.clienteId);
+                      const estadoInfo = estados.find(e => e.value === cotizacion.estado);
+                      const fechaVencimiento = new Date(cotizacion.fecha);
+                      fechaVencimiento.setDate(fechaVencimiento.getDate() + cotizacion.validezDias);
+                      const vencida = new Date() > fechaVencimiento && cotizacion.estado === 'enviada';
+
+                      return (
+                        <tr key={cotizacion.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4">
+                            <div className="font-semibold text-blue-900">{cotizacion.numero}</div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900">{cliente?.nombre || 'N/A'}</td>
+                          <td className="px-6 py-4 text-sm text-gray-900">
+                            {new Date(cotizacion.fecha).toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-4 text-sm">
+                            {vencida ? (
+                              <span className="text-red-600 font-semibold">Vencida</span>
+                            ) : (
+                              <span className="text-gray-600">
+                                {fechaVencimiento.toLocaleDateString()}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-right font-semibold text-green-600">
+                            ${cotizacion.total?.toFixed(2)}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${estadoInfo?.color}`}>
+                              {estadoInfo?.label}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            {cotizacion.items?.length || 0} productos
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleEdit(cotizacion)}
+                                className="text-blue-600 hover:text-blue-900 transition-colors"
+                                title="Editar"
+                              >
+                                <Edit2 size={18} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(cotizacion.id)}
+                                className="text-red-600 hover:text-red-900 transition-colors"
+                                title="Eliminar"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============= CHATBOT CON IA =============
+function AIChatbot() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState([
+    {
+      role: 'assistant',
+      content: '¡Hola! Soy el asistente inteligente de GRX CRM. ¿En qué puedo ayudarte hoy? 🤖'
+    }
+  ]);
+  const [inputMessage, setInputMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!inputMessage.trim() || isLoading) return;
+
+    const userMessage = inputMessage.trim();
+    setInputMessage('');
+
+    // Agregar mensaje del usuario
+    const newMessages = [...messages, { role: 'user', content: userMessage }];
+    setMessages(newMessages);
+    setIsLoading(true);
+
+    try {
+      // Llamada a OpenAI API
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.REACT_APP_OPENAI_API_KEY || 'sk-proj-PLACEHOLDER'}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4',
+          messages: [
+            {
+              role: 'system',
+              content: 'Eres un asistente experto en CRM y ventas. Ayudas a los usuarios del sistema GRX CRM a gestionar sus leads, oportunidades, clientes y procesos de venta. Responde de manera clara, concisa y profesional.'
+            },
+            ...newMessages
+          ],
+          temperature: 0.7,
+          max_tokens: 500
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Error en la API de OpenAI');
+      }
+
+      const data = await response.json();
+      const assistantMessage = data.choices[0].message.content;
+
+      setMessages([...newMessages, { role: 'assistant', content: assistantMessage }]);
+    } catch (error) {
+      console.error('Error llamando a OpenAI:', error);
+      setMessages([
+        ...newMessages,
+        {
+          role: 'assistant',
+          content: '❌ Lo siento, hubo un error al procesar tu mensaje. Por favor, configura tu API Key de OpenAI en las variables de entorno (REACT_APP_OPENAI_API_KEY).'
+        }
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <>
+      {/* Botón flotante */}
+      {!isOpen && (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="fixed bottom-6 right-6 bg-gradient-to-r from-purple-600 to-pink-600 text-white p-4 rounded-full shadow-2xl hover:scale-110 transition-transform duration-200 z-50 animate-bounce"
+          title="Chatear con IA"
+        >
+          <Bot size={32} />
+        </button>
+      )}
+
+      {/* Panel de chat */}
+      {isOpen && (
+        <div className="fixed bottom-6 right-6 w-96 h-[600px] bg-white rounded-2xl shadow-2xl z-50 flex flex-col border-2 border-purple-200">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-4 rounded-t-2xl flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 p-2 rounded-full">
+                <Bot size={24} />
+              </div>
+              <div>
+                <h3 className="font-bold text-lg">Asistente IA</h3>
+                <p className="text-xs text-purple-100">Siempre disponible</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsOpen(false)}
+              className="hover:bg-white/20 p-2 rounded-full transition-colors"
+            >
+              <Minimize2 size={20} />
+            </button>
+          </div>
+
+          {/* Mensajes */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-purple-50 to-white">
+            {messages.map((msg, idx) => (
+              <div
+                key={idx}
+                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-[80%] p-3 rounded-2xl ${
+                    msg.role === 'user'
+                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-br-none'
+                      : 'bg-white border-2 border-purple-200 text-gray-800 rounded-bl-none shadow-sm'
+                  }`}
+                >
+                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                </div>
+              </div>
+            ))}
+
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="bg-white border-2 border-purple-200 p-3 rounded-2xl rounded-bl-none shadow-sm">
+                  <div className="flex gap-2">
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Input */}
+          <form onSubmit={sendMessage} className="p-4 border-t border-purple-100">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                placeholder="Escribe tu mensaje..."
+                className="flex-1 px-4 py-3 border-2 border-purple-200 rounded-xl focus:outline-none focus:border-purple-500 text-sm"
+                disabled={isLoading}
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !inputMessage.trim()}
+                className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-3 rounded-xl hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Send size={20} />
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}
+
 // Módulo Configuración
+// Módulo Workflows - Automatizaciones IF/THEN
+function WorkflowsModule() {
+  const [workflows, setWorkflows] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editingWorkflow, setEditingWorkflow] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [executionLog, setExecutionLog] = useState([]);
+  const [showLog, setShowLog] = useState(false);
+
+  // Estados del formulario
+  const [formData, setFormData] = useState({
+    nombre: '',
+    descripcion: '',
+    activo: true,
+    trigger: {
+      tipo: 'lead_created', // lead_created, lead_updated, opportunity_stage_changed, task_overdue, etc.
+      condiciones: []
+    },
+    acciones: []
+  });
+
+  // Opciones de triggers
+  const triggerOptions = [
+    { value: 'lead_created', label: 'Lead Creado', icon: '🆕' },
+    { value: 'lead_updated', label: 'Lead Actualizado', icon: '✏️' },
+    { value: 'opportunity_created', label: 'Oportunidad Creada', icon: '💼' },
+    { value: 'opportunity_stage_changed', label: 'Cambio de Etapa en Oportunidad', icon: '🔄' },
+    { value: 'task_created', label: 'Tarea Creada', icon: '📋' },
+    { value: 'task_overdue', label: 'Tarea Vencida', icon: '⏰' },
+    { value: 'client_created', label: 'Cliente Creado', icon: '👤' },
+    { value: 'interaction_created', label: 'Interacción Creada', icon: '📞' },
+  ];
+
+  // Opciones de condiciones
+  const conditionFields = {
+    lead: ['calificacion', 'score', 'estado', 'presupuesto', 'ciudad'],
+    opportunity: ['etapa', 'valor', 'probabilidad', 'diasAbierto'],
+    task: ['prioridad', 'estado', 'diasVencido'],
+    client: ['tipo', 'sector', 'pais']
+  };
+
+  const operators = [
+    { value: 'equals', label: 'Igual a (=)', icon: '=' },
+    { value: 'not_equals', label: 'Diferente de (≠)', icon: '≠' },
+    { value: 'greater_than', label: 'Mayor que (>)', icon: '>' },
+    { value: 'less_than', label: 'Menor que (<)', icon: '<' },
+    { value: 'contains', label: 'Contiene', icon: '⊃' },
+    { value: 'not_contains', label: 'No contiene', icon: '⊅' },
+  ];
+
+  // Opciones de acciones
+  const actionOptions = [
+    { value: 'send_email', label: 'Enviar Email', icon: '✉️', fields: ['destinatario', 'asunto', 'mensaje'] },
+    { value: 'send_notification', label: 'Enviar Notificación', icon: '🔔', fields: ['usuario', 'mensaje'] },
+    { value: 'assign_to_user', label: 'Asignar a Usuario', icon: '👤', fields: ['usuario'] },
+    { value: 'change_stage', label: 'Cambiar Etapa', icon: '🔄', fields: ['etapa'] },
+    { value: 'update_field', label: 'Actualizar Campo', icon: '✏️', fields: ['campo', 'valor'] },
+    { value: 'create_task', label: 'Crear Tarea', icon: '📋', fields: ['titulo', 'descripcion', 'fechaVencimiento', 'asignadoA'] },
+    { value: 'add_tag', label: 'Agregar Etiqueta', icon: '🏷️', fields: ['etiqueta'] },
+    { value: 'webhook', label: 'Llamar Webhook', icon: '🔗', fields: ['url', 'metodo'] },
+  ];
+
+  // Cargar workflows
+  useEffect(() => {
+    loadWorkflows();
+    loadExecutionLog();
+  }, []);
+
+  const loadWorkflows = async () => {
+    setLoading(true);
+    try {
+      const querySnapshot = await getDocs(collection(db, 'workflows'));
+      const workflowsList = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setWorkflows(workflowsList);
+    } catch (error) {
+      console.error('Error cargando workflows:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadExecutionLog = async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'workflow_executions'));
+      const executions = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      setExecutionLog(executions.slice(0, 50)); // Últimas 50 ejecuciones
+    } catch (error) {
+      console.error('Error cargando log de ejecuciones:', error);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    try {
+      const workflowData = {
+        ...formData,
+        fechaCreacion: editingWorkflow?.fechaCreacion || new Date().toISOString(),
+        fechaModificacion: new Date().toISOString()
+      };
+
+      if (editingWorkflow) {
+        await updateDoc(doc(db, 'workflows', editingWorkflow.id), workflowData);
+      } else {
+        await addDoc(collection(db, 'workflows'), workflowData);
+      }
+
+      setShowForm(false);
+      setEditingWorkflow(null);
+      resetForm();
+      loadWorkflows();
+    } catch (error) {
+      console.error('Error guardando workflow:', error);
+      alert('Error al guardar el workflow');
+    }
+  };
+
+  const handleEdit = (workflow) => {
+    setEditingWorkflow(workflow);
+    setFormData({
+      nombre: workflow.nombre,
+      descripcion: workflow.descripcion,
+      activo: workflow.activo,
+      trigger: workflow.trigger,
+      acciones: workflow.acciones
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('¿Eliminar este workflow?')) {
+      try {
+        await deleteDoc(doc(db, 'workflows', id));
+        loadWorkflows();
+      } catch (error) {
+        console.error('Error eliminando workflow:', error);
+      }
+    }
+  };
+
+  const toggleActive = async (workflow) => {
+    try {
+      await updateDoc(doc(db, 'workflows', workflow.id), {
+        activo: !workflow.activo
+      });
+      loadWorkflows();
+    } catch (error) {
+      console.error('Error cambiando estado:', error);
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      nombre: '',
+      descripcion: '',
+      activo: true,
+      trigger: {
+        tipo: 'lead_created',
+        condiciones: []
+      },
+      acciones: []
+    });
+  };
+
+  const addCondition = () => {
+    setFormData({
+      ...formData,
+      trigger: {
+        ...formData.trigger,
+        condiciones: [
+          ...formData.trigger.condiciones,
+          { campo: '', operador: 'equals', valor: '' }
+        ]
+      }
+    });
+  };
+
+  const removeCondition = (index) => {
+    const newCondiciones = formData.trigger.condiciones.filter((_, i) => i !== index);
+    setFormData({
+      ...formData,
+      trigger: {
+        ...formData.trigger,
+        condiciones: newCondiciones
+      }
+    });
+  };
+
+  const updateCondition = (index, field, value) => {
+    const newCondiciones = [...formData.trigger.condiciones];
+    newCondiciones[index][field] = value;
+    setFormData({
+      ...formData,
+      trigger: {
+        ...formData.trigger,
+        condiciones: newCondiciones
+      }
+    });
+  };
+
+  const addAction = () => {
+    setFormData({
+      ...formData,
+      acciones: [
+        ...formData.acciones,
+        { tipo: 'send_notification', parametros: {} }
+      ]
+    });
+  };
+
+  const removeAction = (index) => {
+    const newAcciones = formData.acciones.filter((_, i) => i !== index);
+    setFormData({
+      ...formData,
+      acciones: newAcciones
+    });
+  };
+
+  const updateAction = (index, field, value) => {
+    const newAcciones = [...formData.acciones];
+    if (field === 'tipo') {
+      newAcciones[index] = { tipo: value, parametros: {} };
+    } else {
+      newAcciones[index].parametros[field] = value;
+    }
+    setFormData({
+      ...formData,
+      acciones: newAcciones
+    });
+  };
+
+  // Exportar workflows
+  const handleExport = () => {
+    const exportData = workflows.map(w => ({
+      Nombre: w.nombre,
+      Descripción: w.descripcion,
+      Estado: w.activo ? 'Activo' : 'Inactivo',
+      Trigger: triggerOptions.find(t => t.value === w.trigger.tipo)?.label || w.trigger.tipo,
+      'Núm. Condiciones': w.trigger.condiciones?.length || 0,
+      'Núm. Acciones': w.acciones?.length || 0,
+      'Fecha Creación': new Date(w.fechaCreacion).toLocaleDateString()
+    }));
+    exportToExcel(exportData, 'workflows.xlsx');
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-2xl text-gray-600">Cargando workflows...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="bg-gradient-to-r from-purple-900 to-indigo-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <GitBranch size={48} />
+            <div>
+              <h2 className="text-4xl font-bold">Workflows Automáticos</h2>
+              <p className="text-purple-200 mt-2">Motor de Automatización IF/THEN</p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowLog(!showLog)}
+              className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold transition-colors flex items-center gap-2"
+            >
+              <Clock size={20} />
+              {showLog ? 'Ocultar Log' : 'Ver Log'}
+            </button>
+            <button
+              onClick={handleExport}
+              className="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold transition-colors flex items-center gap-2"
+            >
+              <Download size={20} />
+              Exportar
+            </button>
+            <button
+              onClick={() => {
+                setShowForm(true);
+                setEditingWorkflow(null);
+                resetForm();
+              }}
+              className="bg-orange-500 hover:bg-orange-600 px-6 py-3 rounded-lg font-semibold transition-colors flex items-center gap-2"
+            >
+              <Plus size={20} />
+              Nuevo Workflow
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Log de Ejecuciones */}
+      {showLog && (
+        <div className="bg-white rounded-xl shadow-md p-6 mb-8 border-l-4 border-blue-500">
+          <h3 className="text-2xl font-semibold mb-4 text-indigo-900 flex items-center gap-2">
+            <Clock size={24} />
+            Historial de Ejecuciones (Últimas 50)
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-indigo-100">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-indigo-900">Fecha/Hora</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-indigo-900">Workflow</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-indigo-900">Trigger</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-indigo-900">Estado</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-indigo-900">Resultado</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {executionLog.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
+                      No hay ejecuciones registradas aún
+                    </td>
+                  </tr>
+                ) : (
+                  executionLog.map((log) => (
+                    <tr key={log.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm">{new Date(log.timestamp).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-sm font-medium">{log.workflowNombre}</td>
+                      <td className="px-4 py-3 text-sm">{log.triggerTipo}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                          log.estado === 'success' ? 'bg-green-100 text-green-800' :
+                          log.estado === 'failed' ? 'bg-red-100 text-red-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {log.estado === 'success' ? '✓ Exitoso' : log.estado === 'failed' ? '✗ Fallido' : '⚠ Parcial'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{log.mensaje || '-'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Lista de Workflows */}
+      {!showForm && (
+        <div className="bg-white rounded-xl shadow-md p-6 mb-8">
+          <h3 className="text-2xl font-semibold mb-6 text-indigo-900">Workflows Configurados ({workflows.length})</h3>
+
+          {workflows.length === 0 ? (
+            <div className="text-center py-12 bg-gray-50 rounded-lg">
+              <GitBranch size={64} className="mx-auto text-gray-400 mb-4" />
+              <p className="text-gray-600 text-lg mb-4">No hay workflows creados</p>
+              <p className="text-gray-500">Crea tu primer workflow automático para ahorrar tiempo</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {workflows.map((workflow) => {
+                const triggerInfo = triggerOptions.find(t => t.value === workflow.trigger.tipo);
+                return (
+                  <div key={workflow.id} className="border-2 border-gray-200 rounded-lg p-6 hover:border-purple-300 transition-colors">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h4 className="text-xl font-bold text-indigo-900">{workflow.nombre}</h4>
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            workflow.activo
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {workflow.activo ? '✓ Activo' : '○ Inactivo'}
+                          </span>
+                        </div>
+                        <p className="text-gray-600 mb-3">{workflow.descripcion}</p>
+
+                        {/* Trigger */}
+                        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-3 rounded">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-2xl">{triggerInfo?.icon}</span>
+                            <span className="font-semibold text-blue-900">CUANDO:</span>
+                            <span className="text-blue-700">{triggerInfo?.label}</span>
+                          </div>
+
+                          {/* Condiciones */}
+                          {workflow.trigger.condiciones && workflow.trigger.condiciones.length > 0 && (
+                            <div className="ml-8 mt-2 space-y-1">
+                              <span className="font-semibold text-blue-800">Y SI:</span>
+                              {workflow.trigger.condiciones.map((cond, idx) => (
+                                <div key={idx} className="text-sm text-blue-700">
+                                  • {cond.campo} {operators.find(o => o.value === cond.operador)?.icon} {cond.valor}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Acciones */}
+                        <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-2xl">⚡</span>
+                            <span className="font-semibold text-green-900">ENTONCES:</span>
+                          </div>
+                          <div className="ml-8 space-y-1">
+                            {workflow.acciones?.map((accion, idx) => {
+                              const actionInfo = actionOptions.find(a => a.value === accion.tipo);
+                              return (
+                                <div key={idx} className="text-sm text-green-700 flex items-center gap-2">
+                                  <span>{actionInfo?.icon}</span>
+                                  <span>{actionInfo?.label}</span>
+                                  {accion.parametros && Object.keys(accion.parametros).length > 0 && (
+                                    <span className="text-xs text-gray-600">
+                                      ({Object.entries(accion.parametros).map(([k,v]) => `${k}: ${v}`).join(', ')})
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Botones de acción */}
+                      <div className="flex flex-col gap-2 ml-4">
+                        <button
+                          onClick={() => toggleActive(workflow)}
+                          className={`px-4 py-2 rounded font-semibold text-sm transition-colors ${
+                            workflow.activo
+                              ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+                              : 'bg-green-100 text-green-800 hover:bg-green-200'
+                          }`}
+                        >
+                          {workflow.activo ? 'Desactivar' : 'Activar'}
+                        </button>
+                        <button
+                          onClick={() => handleEdit(workflow)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-semibold text-sm transition-colors flex items-center gap-1"
+                        >
+                          <Edit2 size={14} />
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleDelete(workflow.id)}
+                          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded font-semibold text-sm transition-colors flex items-center gap-1"
+                        >
+                          <Trash2 size={14} />
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Metadata */}
+                    <div className="text-xs text-gray-500 mt-4 pt-4 border-t border-gray-200">
+                      Creado: {new Date(workflow.fechaCreacion).toLocaleDateString()} |
+                      Modificado: {new Date(workflow.fechaModificacion).toLocaleDateString()}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Formulario de Workflow */}
+      {showForm && (
+        <div className="bg-white rounded-xl shadow-md p-8 mb-8 border-l-4 border-purple-500">
+          <h3 className="text-2xl font-semibold mb-6 text-indigo-900">
+            {editingWorkflow ? 'Editar Workflow' : 'Crear Nuevo Workflow'}
+          </h3>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Información básica */}
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Nombre del Workflow *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.nombre}
+                  onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                  placeholder="Ej: Asignar leads calientes automáticamente"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Estado
+                </label>
+                <select
+                  value={formData.activo}
+                  onChange={(e) => setFormData({...formData, activo: e.target.value === 'true'})}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                >
+                  <option value="true">Activo</option>
+                  <option value="false">Inactivo</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Descripción
+              </label>
+              <textarea
+                value={formData.descripcion}
+                onChange={(e) => setFormData({...formData, descripcion: e.target.value})}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                rows="2"
+                placeholder="Describe qué hace este workflow..."
+              />
+            </div>
+
+            {/* TRIGGER */}
+            <div className="bg-blue-50 p-6 rounded-lg border-2 border-blue-200">
+              <h4 className="text-lg font-bold text-blue-900 mb-4 flex items-center gap-2">
+                <span className="text-2xl">🎯</span>
+                CUANDO (Trigger)
+              </h4>
+
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Selecciona el evento que activa este workflow *
+                </label>
+                <select
+                  required
+                  value={formData.trigger.tipo}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    trigger: {...formData.trigger, tipo: e.target.value}
+                  })}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                >
+                  {triggerOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.icon} {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Condiciones (IF) */}
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Y SI (Condiciones - Opcional)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={addCondition}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-semibold flex items-center gap-1"
+                  >
+                    <Plus size={14} />
+                    Agregar Condición
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {formData.trigger.condiciones.map((condicion, idx) => (
+                    <div key={idx} className="flex gap-2 items-center bg-white p-3 rounded border border-blue-200">
+                      <input
+                        type="text"
+                        placeholder="Campo"
+                        value={condicion.campo}
+                        onChange={(e) => updateCondition(idx, 'campo', e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded focus:border-blue-500 focus:outline-none text-sm"
+                      />
+                      <select
+                        value={condicion.operador}
+                        onChange={(e) => updateCondition(idx, 'operador', e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded focus:border-blue-500 focus:outline-none text-sm"
+                      >
+                        {operators.map(op => (
+                          <option key={op.value} value={op.value}>
+                            {op.icon} {op.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Valor"
+                        value={condicion.valor}
+                        onChange={(e) => updateCondition(idx, 'valor', e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded focus:border-blue-500 focus:outline-none text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeCondition(idx)}
+                        className="bg-red-500 hover:bg-red-600 text-white p-2 rounded"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* ACCIONES (THEN) */}
+            <div className="bg-green-50 p-6 rounded-lg border-2 border-green-200">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-lg font-bold text-green-900 flex items-center gap-2">
+                  <span className="text-2xl">⚡</span>
+                  ENTONCES (Acciones)
+                </h4>
+                <button
+                  type="button"
+                  onClick={addAction}
+                  className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-semibold flex items-center gap-1"
+                >
+                  <Plus size={14} />
+                  Agregar Acción
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {formData.acciones.length === 0 ? (
+                  <p className="text-gray-600 text-sm italic">
+                    Agrega al menos una acción para ejecutar cuando se cumpla el trigger
+                  </p>
+                ) : (
+                  formData.acciones.map((accion, idx) => {
+                    const actionInfo = actionOptions.find(a => a.value === accion.tipo);
+                    return (
+                      <div key={idx} className="bg-white p-4 rounded border-2 border-green-200">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-xl">{actionInfo?.icon}</span>
+                          <select
+                            value={accion.tipo}
+                            onChange={(e) => updateAction(idx, 'tipo', e.target.value)}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded focus:border-green-500 focus:outline-none"
+                          >
+                            {actionOptions.map(opt => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.icon} {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => removeAction(idx)}
+                            className="bg-red-500 hover:bg-red-600 text-white p-2 rounded"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+
+                        {/* Campos específicos de la acción */}
+                        {actionInfo?.fields && (
+                          <div className="grid grid-cols-2 gap-3 ml-8">
+                            {actionInfo.fields.map(field => (
+                              <div key={field}>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1 capitalize">
+                                  {field}
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder={field}
+                                  value={accion.parametros[field] || ''}
+                                  onChange={(e) => updateAction(idx, field, e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded focus:border-green-500 focus:outline-none text-sm"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Botones */}
+            <div className="flex gap-3 pt-4">
+              <button
+                type="submit"
+                className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-3 rounded-lg font-semibold transition-colors flex items-center gap-2"
+              >
+                <Save size={20} />
+                {editingWorkflow ? 'Actualizar Workflow' : 'Crear Workflow'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForm(false);
+                  setEditingWorkflow(null);
+                  resetForm();
+                }}
+                className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-8 py-3 rounded-lg font-semibold transition-colors flex items-center gap-2"
+              >
+                <X size={20} />
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Info Box */}
+      <div className="bg-gradient-to-r from-purple-100 to-indigo-100 border-2 border-purple-300 rounded-lg p-6">
+        <h4 className="font-bold text-purple-900 mb-3 flex items-center gap-2">
+          <Info size={20} />
+          Acerca de Workflows
+        </h4>
+        <ul className="space-y-2 text-sm text-purple-800">
+          <li>• Los workflows automatizan tareas repetitivas usando lógica IF/THEN</li>
+          <li>• Un <strong>trigger</strong> es el evento que inicia el workflow (ej: lead creado)</li>
+          <li>• Las <strong>condiciones</strong> filtran cuándo se ejecuta (ej: score &gt; 80)</li>
+          <li>• Las <strong>acciones</strong> son las tareas a ejecutar (ej: asignar a gerente, enviar email)</li>
+          <li>• Los workflows inactivos no se ejecutan, pero se guardan para activarlos después</li>
+          <li>• Revisa el <strong>Log de Ejecuciones</strong> para ver el historial de automatizaciones</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function ConfigModule() {
   return (
     <div>
