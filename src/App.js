@@ -2422,6 +2422,7 @@ function OportunidadesModule() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [vistaKanban, setVistaKanban] = useState(true);
   const [formData, setFormData] = useState({
     nombre: '',
     clienteId: '',
@@ -2559,6 +2560,33 @@ function OportunidadesModule() {
     return new Date(dateString).toLocaleDateString('es-MX');
   };
 
+  const handleDragStart = (e, oportunidadId) => {
+    e.dataTransfer.setData('oportunidadId', oportunidadId);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = async (e, nuevaEtapa) => {
+    e.preventDefault();
+    const oportunidadId = e.dataTransfer.getData('oportunidadId');
+    const oportunidad = oportunidades.find(o => o.id === oportunidadId);
+
+    if (oportunidad && oportunidad.etapa !== nuevaEtapa) {
+      try {
+        await updateDoc(doc(db, 'oportunidades', oportunidadId), { etapa: nuevaEtapa });
+        loadData();
+      } catch (error) {
+        console.error('Error actualizando etapa:', error);
+      }
+    }
+  };
+
+  const getOportunidadesPorEtapa = (etapa) => {
+    return oportunidades.filter(o => o.etapa === etapa);
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
@@ -2572,13 +2600,29 @@ function OportunidadesModule() {
             {showForm ? (editingId ? 'Editar Oportunidad' : 'Nueva Oportunidad') : 'Pipeline de Ventas'}
           </h3>
           {!showForm && (
-            <button
-              onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-3 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all shadow-md"
-            >
-              <Plus className="w-5 h-5" />
-              Nueva Oportunidad
-            </button>
+            <div className="flex gap-3">
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                <button
+                  onClick={() => setVistaKanban(true)}
+                  className={`px-4 py-2 rounded-md transition-all ${vistaKanban ? 'bg-white shadow text-blue-900 font-semibold' : 'text-gray-600'}`}
+                >
+                  📋 Kanban
+                </button>
+                <button
+                  onClick={() => setVistaKanban(false)}
+                  className={`px-4 py-2 rounded-md transition-all ${!vistaKanban ? 'bg-white shadow text-blue-900 font-semibold' : 'text-gray-600'}`}
+                >
+                  📊 Tabla
+                </button>
+              </div>
+              <button
+                onClick={() => setShowForm(true)}
+                className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-3 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all shadow-md"
+              >
+                <Plus className="w-5 h-5" />
+                Nueva Oportunidad
+              </button>
+            </div>
           )}
         </div>
 
@@ -2737,6 +2781,58 @@ function OportunidadesModule() {
             <TrendingUp className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-600 text-lg">No hay oportunidades registradas</p>
             <p className="text-gray-500 mt-2">Crea tu primera oportunidad de venta</p>
+          </div>
+        ) : vistaKanban ? (
+          <div className="flex gap-4 overflow-x-auto pb-4">
+            {etapas.map(etapa => (
+              <div
+                key={etapa.value}
+                className="flex-shrink-0 w-80 bg-gray-50 rounded-lg p-4"
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, etapa.value)}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-semibold text-gray-900">{etapa.label}</h4>
+                  <span className={`px-2 py-1 text-xs font-semibold rounded-full ${etapa.color}`}>
+                    {getOportunidadesPorEtapa(etapa.value).length}
+                  </span>
+                </div>
+                <div className="space-y-3 min-h-[400px]">
+                  {getOportunidadesPorEtapa(etapa.value).map(oportunidad => (
+                    <div
+                      key={oportunidad.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, oportunidad.id)}
+                      className="bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-move"
+                    >
+                      <h5 className="font-semibold text-gray-900 mb-2">{oportunidad.nombre}</h5>
+                      <div className="space-y-1 text-sm text-gray-600 mb-3">
+                        <p>👤 {getClienteNombre(oportunidad.clienteId)}</p>
+                        <p className="font-semibold text-green-600">{formatCurrency(oportunidad.valor)}</p>
+                        <p>📅 {formatDate(oportunidad.fechaEstimadaCierre)}</p>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 bg-gray-200 rounded-full h-1.5">
+                            <div
+                              className="bg-blue-600 h-1.5 rounded-full"
+                              style={{ width: `${oportunidad.probabilidad || 0}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-xs text-gray-500">{oportunidad.probabilidad}%</span>
+                        </div>
+                        <button
+                          onClick={() => handleEdit(oportunidad)}
+                          className="text-blue-600 hover:text-blue-900 text-xs"
+                        >
+                          Editar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <div className="overflow-x-auto">
