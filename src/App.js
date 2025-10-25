@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download, Calendar, ChevronLeft, ChevronRight, Mail, Send } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from './firebase';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -1547,6 +1547,13 @@ function InteraccionesModule() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [showEmailComposer, setShowEmailComposer] = useState(false);
+  const [emailData, setEmailData] = useState({
+    clienteId: '',
+    subject: '',
+    body: '',
+    saveAsInteraction: true
+  });
   const [formData, setFormData] = useState({
     tipo: 'llamada',
     clienteId: '',
@@ -1700,18 +1707,95 @@ function InteraccionesModule() {
     return tiposInteraccion.find(t => t.value === tipoValue) || tiposInteraccion[0];
   };
 
+  // Funciones de email
+  const openEmailComposer = (clienteId = '') => {
+    setEmailData({
+      clienteId: clienteId,
+      subject: '',
+      body: '',
+      saveAsInteraction: true
+    });
+    setShowEmailComposer(true);
+  };
+
+  const handleSendEmail = async () => {
+    const cliente = clientes.find(c => c.id === emailData.clienteId);
+
+    if (!cliente || !cliente.email) {
+      alert('Por favor selecciona un cliente con email válido');
+      return;
+    }
+
+    if (!emailData.subject || !emailData.body) {
+      alert('Por favor completa el asunto y el mensaje del email');
+      return;
+    }
+
+    // Construir mailto: link
+    const mailtoLink = `mailto:${encodeURIComponent(cliente.email)}?subject=${encodeURIComponent(emailData.subject)}&body=${encodeURIComponent(emailData.body)}`;
+
+    // Abrir cliente de email
+    window.location.href = mailtoLink;
+
+    // Guardar como interacción si está marcado
+    if (emailData.saveAsInteraction) {
+      try {
+        await addDoc(collection(db, 'interacciones'), {
+          tipo: 'email',
+          clienteId: emailData.clienteId,
+          usuarioId: '',
+          oportunidadId: '',
+          fecha: new Date().toISOString().split('T')[0],
+          hora: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+          duracion: '',
+          notas: `Asunto: ${emailData.subject}\n\nMensaje:\n${emailData.body}`,
+          seguimiento: '',
+          completado: true,
+          fechaCreacion: new Date().toISOString()
+        });
+
+        console.log('Email guardado como interacción');
+        loadData();
+      } catch (error) {
+        console.error('Error guardando email como interacción:', error);
+      }
+    }
+
+    // Cerrar modal
+    setShowEmailComposer(false);
+    resetEmailForm();
+  };
+
+  const resetEmailForm = () => {
+    setEmailData({
+      clienteId: '',
+      subject: '',
+      body: '',
+      saveAsInteraction: true
+    });
+  };
+
   return (
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
         <div className="flex items-center justify-between">
           <h2 className="text-4xl font-bold">Interacciones</h2>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
-          >
-            {showForm ? <X size={24} /> : <Plus size={24} />}
-            <span className="text-xl">{showForm ? 'Cancelar' : 'Nueva Interacción'}</span>
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => openEmailComposer()}
+              className="flex items-center gap-2 bg-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-purple-700 transition-all"
+            >
+              <Mail size={24} />
+              <span className="text-xl">Enviar Email</span>
+            </button>
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
+            >
+              {showForm ? <X size={24} /> : <Plus size={24} />}
+              <span className="text-xl">{showForm ? 'Cancelar' : 'Nueva Interacción'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1947,6 +2031,119 @@ function InteraccionesModule() {
           </div>
         )}
       </div>
+
+      {/* Modal de Email Composer */}
+      {showEmailComposer && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowEmailComposer(false)}>
+          <div className="bg-white rounded-xl shadow-2xl p-8 max-w-3xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <Mail className="text-purple-600" size={32} />
+                <h3 className="text-2xl font-bold text-gray-900">Enviar Email</h3>
+              </div>
+              <button
+                onClick={() => setShowEmailComposer(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X size={28} />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Cliente */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Para (Cliente) *
+                </label>
+                <select
+                  value={emailData.clienteId}
+                  onChange={(e) => setEmailData({ ...emailData, clienteId: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Seleccionar cliente...</option>
+                  {clientes.filter(c => c.email).map(cliente => (
+                    <option key={cliente.id} value={cliente.id}>
+                      {cliente.nombre} ({cliente.email})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-sm text-gray-500 mt-1">
+                  Solo se muestran clientes con email registrado
+                </p>
+              </div>
+
+              {/* Asunto */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Asunto *
+                </label>
+                <input
+                  type="text"
+                  value={emailData.subject}
+                  onChange={(e) => setEmailData({ ...emailData, subject: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  placeholder="Ingresa el asunto del email"
+                  required
+                />
+              </div>
+
+              {/* Mensaje */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Mensaje *
+                </label>
+                <textarea
+                  value={emailData.body}
+                  onChange={(e) => setEmailData({ ...emailData, body: e.target.value })}
+                  rows={8}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                  placeholder="Escribe tu mensaje aquí..."
+                  required
+                />
+              </div>
+
+              {/* Guardar como interacción */}
+              <div className="flex items-center gap-3 bg-blue-50 p-4 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="saveAsInteraction"
+                  checked={emailData.saveAsInteraction}
+                  onChange={(e) => setEmailData({ ...emailData, saveAsInteraction: e.target.checked })}
+                  className="w-5 h-5 text-purple-600 rounded focus:ring-purple-500"
+                />
+                <label htmlFor="saveAsInteraction" className="text-sm text-gray-700 cursor-pointer">
+                  Guardar este email como interacción en el CRM
+                </label>
+              </div>
+
+              {/* Botones */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={handleSendEmail}
+                  className="flex-1 flex items-center justify-center gap-2 bg-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-purple-700 transition-all"
+                >
+                  <Send size={20} />
+                  Enviar Email
+                </button>
+                <button
+                  onClick={() => setShowEmailComposer(false)}
+                  className="px-6 py-3 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-all"
+                >
+                  Cancelar
+                </button>
+              </div>
+
+              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+                <p className="text-sm text-yellow-800">
+                  <strong>Nota:</strong> Al hacer clic en "Enviar Email", se abrirá tu cliente de correo predeterminado
+                  con el email pre-rellenado. Asegúrate de enviar el correo desde tu aplicación de email.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
