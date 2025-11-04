@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download, Calendar, ChevronLeft, ChevronRight, Mail, Send, Menu, UserPlus, ArrowRight, DollarSign, Target, Clock, Award, Info, MessageCircle, Bot, Minimize2, GitBranch } from 'lucide-react';
+import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download, Calendar, ChevronLeft, ChevronRight, Mail, Send, Menu, UserPlus, ArrowRight, DollarSign, Target, Clock, Award, Info, MessageCircle, Bot, Minimize2, GitBranch, FileText, Paperclip, ExternalLink } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
-import { db } from './firebase';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { db, storage } from './firebase';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import * as XLSX from 'xlsx';
 
@@ -484,7 +485,7 @@ export default function App() {
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 bg-gray-100 lg:pl-5">
-        <div className="max-w-[1600px] px-4 lg:pr-10 py-16 lg:py-10 box-border">
+        <div className="w-full px-4 lg:pr-10 py-16 lg:py-10 box-border">
           {currentModule === 'dashboard' && (
             <DashboardModule currentUser={currentUser} />
           )}
@@ -1517,12 +1518,23 @@ function EmpresasModule() {
               {/* Logo de la Empresa */}
               <div>
                 <label className="block text-lg font-medium text-gray-700 mb-2">Logo de la Empresa</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleLogoUpload}
-                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500"
-                />
+                <div className="flex gap-2 items-start">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    className="flex-1 px-4 py-3 text-lg border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500"
+                  />
+                  {formData.logo && (
+                    <button
+                      type="button"
+                      onClick={() => setFormData({...formData, logo: ''})}
+                      className="px-4 py-3 bg-red-100 text-red-700 rounded-md hover:bg-red-200 text-lg font-semibold transition-colors"
+                    >
+                      ✕ Quitar
+                    </button>
+                  )}
+                </div>
                 {formData.logo && (
                   <div className="mt-2">
                     <img src={formData.logo} alt="Logo preview" className="h-16 w-auto object-contain border border-gray-200 rounded p-2" />
@@ -3036,6 +3048,7 @@ function ClientesModule({ currentUser }) {
   const [proyectos, setProyectos] = useState([]);
   const [formData, setFormData] = useState({
     nombre: '',
+    empresaCliente: '',
     empresaId: '',
     email: '',
     telefono: '',
@@ -3153,6 +3166,7 @@ function ClientesModule({ currentUser }) {
   const handleEdit = (cliente) => {
     setFormData({
       nombre: cliente.nombre,
+      empresaCliente: cliente.empresaCliente || '',
       empresaId: cliente.empresaId || '',
       email: cliente.email,
       telefono: cliente.telefono,
@@ -3181,6 +3195,7 @@ function ClientesModule({ currentUser }) {
   const resetForm = () => {
     setFormData({
       nombre: '',
+      empresaCliente: '',
       empresaId: '',
       email: '',
       telefono: '',
@@ -3202,15 +3217,16 @@ function ClientesModule({ currentUser }) {
 
   const handleExport = () => {
     const dataToExport = clientes.map(cliente => ({
-      Nombre: cliente.nombre,
-      Empresa: getEmpresaNombre(cliente.empresaId),
-      Email: cliente.email,
-      Teléfono: cliente.telefono,
-      Cargo: cliente.cargo,
-      Industria: cliente.industria,
-      Ubicación: cliente.ubicacion,
-      Etiquetas: Array.isArray(cliente.etiquetas) ? cliente.etiquetas.join(', ') : '',
-      Activo: cliente.activo ? 'Sí' : 'No'
+      'Contacto': cliente.nombre,
+      'Empresa del Cliente': cliente.empresaCliente || 'Sin empresa',
+      'Empresa Interna Asignada': getEmpresaNombre(cliente.empresaId),
+      'Email': cliente.email,
+      'Teléfono': cliente.telefono,
+      'Cargo': cliente.cargo,
+      'Industria': cliente.industria,
+      'Ubicación': cliente.ubicacion,
+      'Etiquetas': Array.isArray(cliente.etiquetas) ? cliente.etiquetas.join(', ') : '',
+      'Activo': cliente.activo ? 'Sí' : 'No'
     }));
     exportToExcel(dataToExport, 'Clientes');
   };
@@ -3219,7 +3235,10 @@ function ClientesModule({ currentUser }) {
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-4xl font-bold">Clientes</h2>
+          <div>
+            <h2 className="text-4xl font-bold">Clientes</h2>
+            <p className="text-blue-200 text-sm mt-2">Gestiona los contactos de las empresas que te contratarán</p>
+          </div>
           <div className="flex gap-3">
             <button
               onClick={handleExport}
@@ -3248,27 +3267,41 @@ function ClientesModule({ currentUser }) {
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-2 gap-6">
               <div>
-                <label className="block text-lg font-medium text-gray-700 mb-2">Nombre Completo *</label>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Nombre del Contacto *</label>
                 <input
                   type="text"
                   required
                   value={formData.nombre}
                   onChange={(e) => setFormData({...formData, nombre: e.target.value})}
                   className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  placeholder="Ej: Juan Pérez"
                 />
               </div>
               <div>
-                <label className="block text-lg font-medium text-gray-700 mb-2">Empresa Asignada</label>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Empresa del Cliente (que contratará) *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.empresaCliente}
+                  onChange={(e) => setFormData({...formData, empresaCliente: e.target.value})}
+                  className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
+                  placeholder="Ej: Google, Microsoft, Walmart..."
+                />
+                <p className="text-sm text-gray-500 mt-1">Nombre de la empresa externa a la que pertenece este contacto</p>
+              </div>
+              <div>
+                <label className="block text-lg font-medium text-gray-700 mb-2">Empresa Interna Asignada</label>
                 <select
                   value={formData.empresaId}
                   onChange={(e) => setFormData({...formData, empresaId: e.target.value})}
                   className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md"
                 >
-                  <option value="">Sin empresa</option>
+                  <option value="">Sin asignar</option>
                   {empresas.map(empresa => (
                     <option key={empresa.id} value={empresa.id}>{empresa.nombre}</option>
                   ))}
                 </select>
+                <p className="text-sm text-gray-500 mt-1">Tu empresa interna que atenderá este cliente (opcional)</p>
               </div>
               <div>
                 <label className="block text-lg font-medium text-gray-700 mb-2">Email *</label>
@@ -3396,11 +3429,11 @@ function ClientesModule({ currentUser }) {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Nombre</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Contacto</th>
+                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Empresa (Cliente)</th>
                   <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Email</th>
                   <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Cargo</th>
                   <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Industria</th>
-                  <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Empresa</th>
                   <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700">Etiquetas</th>
                   <th className="px-6 py-4 text-left text-lg font-semibold text-gray-700 bg-gradient-to-r from-red-50 to-orange-50">
                     <div className="flex items-center gap-2">
@@ -3422,10 +3455,15 @@ function ClientesModule({ currentUser }) {
                   return (
                   <tr key={cliente.id} className="border-b border-gray-200 hover:bg-gray-50">
                     <td className="px-6 py-4 text-lg text-gray-900 font-medium">{cliente.nombre}</td>
+                    <td className="px-6 py-4 text-lg">
+                      <span className="font-semibold text-blue-900">{cliente.empresaCliente || 'Sin empresa'}</span>
+                      {cliente.empresaId && (
+                        <p className="text-xs text-gray-500 mt-1">Asignado: {getEmpresaNombre(cliente.empresaId)}</p>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-lg text-gray-600">{cliente.email}</td>
                     <td className="px-6 py-4 text-lg text-gray-600">{cliente.cargo || '-'}</td>
                     <td className="px-6 py-4 text-lg text-gray-600">{cliente.industria || '-'}</td>
-                    <td className="px-6 py-4 text-lg text-gray-600">{getEmpresaNombre(cliente.empresaId)}</td>
                     <td className="px-6 py-4">
                       {Array.isArray(cliente.etiquetas) && cliente.etiquetas.length > 0 ? (
                         <div className="flex gap-1 flex-wrap">
@@ -3518,8 +3556,11 @@ function ClientesModule({ currentUser }) {
             <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-purple-700 text-white p-6 rounded-t-xl">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-3xl font-bold mb-2">Vista 360° - {show360View.nombre}</h2>
-                  <p className="text-purple-100">{show360View.email}</p>
+                  <p className="text-purple-200 text-sm font-semibold uppercase tracking-wide mb-1">Contacto</p>
+                  <h2 className="text-3xl font-bold mb-2">{show360View.nombre}</h2>
+                  <p className="text-purple-100 text-lg">
+                    <span className="font-semibold">{show360View.empresaCliente || 'Sin empresa'}</span> • {show360View.email}
+                  </p>
                 </div>
                 <button onClick={() => setShow360View(null)} className="text-white hover:text-gray-200">
                   <X size={32} />
@@ -3528,16 +3569,28 @@ function ClientesModule({ currentUser }) {
             </div>
 
             <div className="p-6 space-y-6">
-              {/* Información del Cliente */}
+              {/* Información del Contacto */}
               <div className="bg-gray-50 rounded-lg p-6">
                 <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                   <UserCircle size={24} className="text-purple-600" />
-                  Información del Cliente
+                  Información del Contacto
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   <div>
-                    <p className="text-sm text-gray-500">Cargo</p>
+                    <p className="text-sm text-gray-500">Empresa del Cliente</p>
+                    <p className="text-lg font-bold text-blue-900">{show360View.empresaCliente || 'No especificada'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Cargo en la empresa</p>
                     <p className="text-lg font-semibold">{show360View.cargo || 'No especificado'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Teléfono</p>
+                    <p className="text-lg font-semibold">{show360View.telefono || 'No especificado'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Empresa Interna Asignada</p>
+                    <p className="text-lg font-semibold">{getEmpresaNombre(show360View.empresaId)}</p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-500">Industria</p>
@@ -3548,15 +3601,7 @@ function ClientesModule({ currentUser }) {
                     <p className="text-lg font-semibold">{show360View.ubicacion || 'No especificada'}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Teléfono</p>
-                    <p className="text-lg font-semibold">{show360View.telefono || 'No especificado'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Empresa</p>
-                    <p className="text-lg font-semibold">{getEmpresaNombre(show360View.empresaId)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Estado</p>
+                    <p className="text-sm text-gray-500">Estado del contacto</p>
                     <span className={`px-3 py-1 rounded-full text-sm font-semibold ${show360View.activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                       {show360View.activo ? 'Activo' : 'Inactivo'}
                     </span>
@@ -5554,6 +5599,16 @@ function OportunidadesModule({ currentUser }) {
   const [tareasRelacionadas, setTareasRelacionadas] = useState([]);
   const [showNuevaInteraccion, setShowNuevaInteraccion] = useState(false);
   const [showNuevaTarea, setShowNuevaTarea] = useState(false);
+  const [editingInteraccionId, setEditingInteraccionId] = useState(null);
+  const [editingTareaId, setEditingTareaId] = useState(null);
+  const [archivoAdjunto, setArchivoAdjunto] = useState(null);
+  const [subiendoArchivo, setSubiendoArchivo] = useState(false);
+  const [interaccionDetalleView, setInteraccionDetalleView] = useState(null);
+  const [showChatIA, setShowChatIA] = useState(false);
+  const [chatIAType, setChatIAType] = useState(null); // 'interaccion' o 'tarea'
+  const [chatIAMessages, setChatIAMessages] = useState([]);
+  const [enviandoMensajeIA, setEnviandoMensajeIA] = useState(false);
+  const [mensajeUsuarioIA, setMensajeUsuarioIA] = useState('');
   const [nuevaInteraccion, setNuevaInteraccion] = useState({
     tipo: 'llamada',
     descripcion: '',
@@ -5773,6 +5828,14 @@ function OportunidadesModule({ currentUser }) {
     return empresa ? empresa.nombre : 'N/A';
   };
 
+  const getEmpresaColores = (empresaId) => {
+    const empresa = empresas.find(e => e.id === empresaId);
+    return {
+      primario: empresa?.colorPrimario || '#ea580c',
+      secundario: empresa?.colorSecundario || '#fb923c'
+    };
+  };
+
   const getUsuarioNombre = (usuarioId) => {
     const usuario = usuarios.find(u => u.id === usuarioId);
     return usuario ? usuario.nombre : 'N/A';
@@ -5928,15 +5991,296 @@ function OportunidadesModule({ currentUser }) {
     }
   };
 
+  const abrirChatIA = (tipo) => {
+    setChatIAType(tipo);
+    setChatIAMessages([]);
+    setMensajeUsuarioIA('');
+    setShowChatIA(true);
+
+    // Generar primer mensaje automáticamente
+    generarPrimerMensajeIA(tipo);
+  };
+
+  const generarPrimerMensajeIA = async (tipo) => {
+    setEnviandoMensajeIA(true);
+    try {
+      let prompt = '';
+
+      if (tipo === 'interaccion') {
+        const tipoMap = {
+          'llamada': 'llamada telefónica',
+          'email': 'correo electrónico',
+          'reunion': 'resumen de reunión',
+          'mensaje': 'mensaje',
+          'otro': 'nota'
+        };
+
+        const interaccionesPrevias = getInteraccionesPorOportunidad(oportunidadDetalle.id)
+          .sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
+          .slice(-3);
+
+        const contextoInteracciones = interaccionesPrevias.length > 0
+          ? `Últimas interacciones:\n${interaccionesPrevias.map((int, i) =>
+              `${i + 1}. ${int.tipo} (${int.fecha}): ${int.descripcion.substring(0, 100)}...`
+            ).join('\n')}`
+          : 'No hay interacciones previas registradas.';
+
+        prompt = `Eres un experto en ventas B2B y comunicación profesional.
+
+CONTEXTO:
+- Cliente: ${getClienteNombre(oportunidadDetalle.clienteId)}
+- Oportunidad: ${oportunidadDetalle.nombre}
+- Valor: ${formatCurrency(oportunidadDetalle.valor)}
+- Etapa actual: ${oportunidadDetalle.etapa}
+${contextoInteracciones}
+
+TIPO DE COMUNICACIÓN: ${tipoMap[nuevaInteraccion.tipo]}
+
+${nuevaInteraccion.descripcion ? `CONTEXTO ADICIONAL PROPORCIONADO:\n${nuevaInteraccion.descripcion}\n\nMejora y profesionaliza este texto.` : 'Genera un contenido profesional para esta comunicación.'}
+
+REQUISITOS:
+1. Lenguaje profesional, directo y orientado a resultados
+2. Debe incluir un Call-to-Action claro
+3. Mencionar valor agregado específico
+4. Establecer próximos pasos concretos
+5. Máximo 200 palabras
+6. Tono consultivo, no agresivo
+
+Responde SOLO con el contenido de la ${tipoMap[nuevaInteraccion.tipo]}, sin introducción ni explicaciones adicionales.`;
+      } else {
+        // tipo === 'tarea'
+        const tareasRelacionadasExistentes = tareasRelacionadas
+          .filter(t => t.estado !== 'completada')
+          .slice(0, 3);
+
+        const contextoTareas = tareasRelacionadasExistentes.length > 0
+          ? `Tareas pendientes:\n${tareasRelacionadasExistentes.map((t, i) =>
+              `${i + 1}. ${t.titulo} (${t.prioridad}) - ${t.descripcion || 'Sin detalles'}`
+            ).join('\n')}`
+          : 'No hay tareas pendientes.';
+
+        prompt = `Eres un experto en gestión de ventas y productividad.
+
+CONTEXTO DE LA OPORTUNIDAD:
+- Cliente: ${getClienteNombre(oportunidadDetalle.clienteId)}
+- Oportunidad: ${oportunidadDetalle.nombre}
+- Valor: ${formatCurrency(oportunidadDetalle.valor)}
+- Etapa actual: ${oportunidadDetalle.etapa}
+${contextoTareas}
+
+${nuevaTarea.titulo ? `TAREA A MEJORAR:\nTítulo: ${nuevaTarea.titulo}\n${nuevaTarea.descripcion ? `Descripción inicial: ${nuevaTarea.descripcion}` : ''}` : 'OBJETIVO: Generar una tarea efectiva para avanzar esta oportunidad'}
+
+REQUISITOS:
+1. Genera un título claro y accionable (máximo 60 caracteres)
+2. Descripción específica con pasos concretos
+3. Orientada a cerrar la venta o avanzar a la siguiente etapa
+4. Incluye criterios de éxito medibles
+5. Máximo 150 palabras en la descripción
+
+Responde en formato JSON:
+{
+  "titulo": "título de la tarea",
+  "descripcion": "descripción detallada con pasos"
+}`;
+      }
+
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.REACT_APP_GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            {
+              role: 'system',
+              content: tipo === 'interaccion'
+                ? 'Eres un experto en ventas B2B, redacción comercial y cierre de oportunidades. Generas contenido profesional, persuasivo y orientado a resultados.'
+                : 'Eres un experto en ventas B2B y productividad. Generas tareas accionables, específicas y orientadas a resultados.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: tipo === 'interaccion' ? 600 : 400,
+          ...(tipo === 'tarea' && { response_format: { type: "json_object" } })
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Error de Groq:', errorData);
+        throw new Error(`Error ${response.status}: ${errorData.error?.message || 'Error desconocido'}`);
+      }
+
+      const data = await response.json();
+      const contenido = data.choices[0].message.content;
+
+      setChatIAMessages([
+        { role: 'assistant', content: contenido }
+      ]);
+
+    } catch (error) {
+      console.error('Error generando con IA:', error);
+      alert(`Error al generar contenido con IA: ${error.message}\n\nVerifica tu conexión a internet.`);
+      setShowChatIA(false);
+    } finally {
+      setEnviandoMensajeIA(false);
+    }
+  };
+
+  const enviarMensajeIA = async () => {
+    if (!mensajeUsuarioIA.trim()) return;
+
+    const nuevoMensajeUsuario = { role: 'user', content: mensajeUsuarioIA };
+    const mensajesActualizados = [...chatIAMessages, nuevoMensajeUsuario];
+
+    setChatIAMessages(mensajesActualizados);
+    setMensajeUsuarioIA('');
+    setEnviandoMensajeIA(true);
+
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.REACT_APP_GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            {
+              role: 'system',
+              content: chatIAType === 'interaccion'
+                ? 'Eres un experto en ventas B2B, redacción comercial y cierre de oportunidades. Ayudas a mejorar y ajustar contenido profesional según las indicaciones del usuario.'
+                : 'Eres un experto en ventas B2B y productividad. Ayudas a crear y mejorar tareas accionables según las indicaciones del usuario. Siempre respondes en formato JSON con {titulo, descripcion}.'
+            },
+            ...mensajesActualizados
+          ],
+          temperature: 0.7,
+          max_tokens: 600,
+          ...(chatIAType === 'tarea' && { response_format: { type: "json_object" } })
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Error ${response.status}: ${errorData.error?.message || 'Error desconocido'}`);
+      }
+
+      const data = await response.json();
+      const respuestaIA = data.choices[0].message.content;
+
+      setChatIAMessages([...mensajesActualizados, { role: 'assistant', content: respuestaIA }]);
+
+    } catch (error) {
+      console.error('Error en chat IA:', error);
+      alert(`Error: ${error.message}`);
+    } finally {
+      setEnviandoMensajeIA(false);
+    }
+  };
+
+  const aceptarContenidoIA = () => {
+    const ultimoMensajeIA = chatIAMessages.filter(m => m.role === 'assistant').slice(-1)[0];
+
+    if (!ultimoMensajeIA) return;
+
+    if (chatIAType === 'interaccion') {
+      setNuevaInteraccion({
+        ...nuevaInteraccion,
+        descripcion: ultimoMensajeIA.content
+      });
+    } else {
+      try {
+        const resultado = JSON.parse(ultimoMensajeIA.content);
+        setNuevaTarea({
+          ...nuevaTarea,
+          titulo: resultado.titulo,
+          descripcion: resultado.descripcion
+        });
+      } catch (error) {
+        setNuevaTarea({
+          ...nuevaTarea,
+          descripcion: ultimoMensajeIA.content
+        });
+      }
+    }
+
+    setShowChatIA(false);
+  };
+
   const handleGuardarInteraccion = async (e) => {
     e.preventDefault();
+    setSubiendoArchivo(true);
+
     try {
-      await addDoc(collection(db, 'interacciones'), {
-        ...nuevaInteraccion,
-        oportunidadId: oportunidadDetalle.id,
-        clienteId: oportunidadDetalle.clienteId,
-        fechaCreacion: new Date().toISOString()
-      });
+      let archivoURL = null;
+      let archivoNombre = null;
+
+      // Subir archivo si existe
+      if (archivoAdjunto) {
+        try {
+          console.log('Iniciando subida de archivo:', archivoAdjunto.name);
+          const timestamp = Date.now();
+          const nombreArchivo = `interacciones/${oportunidadDetalle.id}/${timestamp}_${archivoAdjunto.name}`;
+          const archivoRef = ref(storage, nombreArchivo);
+
+          await uploadBytes(archivoRef, archivoAdjunto);
+          archivoURL = await getDownloadURL(archivoRef);
+          archivoNombre = archivoAdjunto.name;
+          console.log('Archivo subido exitosamente:', archivoURL);
+        } catch (uploadError) {
+          console.error('Error subiendo archivo:', uploadError);
+
+          // Si falla la subida del archivo, preguntar si quiere continuar sin archivo
+          const continuar = window.confirm(
+            'No se pudo subir el archivo. Esto puede deberse a que Firebase Storage no está configurado.\n\n' +
+            '¿Deseas guardar la interacción sin el archivo adjunto?'
+          );
+
+          if (!continuar) {
+            setSubiendoArchivo(false);
+            return;
+          }
+        }
+      }
+
+      if (editingInteraccionId) {
+        // Editar interacción existente
+        const updateData = {
+          tipo: nuevaInteraccion.tipo,
+          descripcion: nuevaInteraccion.descripcion,
+          resultado: nuevaInteraccion.resultado,
+          fecha: nuevaInteraccion.fecha
+        };
+
+        // Solo actualizar archivo si se subió uno nuevo
+        if (archivoURL) {
+          updateData.archivoURL = archivoURL;
+          updateData.archivoNombre = archivoNombre;
+        }
+
+        await updateDoc(doc(db, 'interacciones', editingInteraccionId), updateData);
+      } else {
+        // Crear nueva interacción
+        const nuevaInteraccionData = {
+          ...nuevaInteraccion,
+          oportunidadId: oportunidadDetalle.id,
+          clienteId: oportunidadDetalle.clienteId,
+          fechaCreacion: new Date().toISOString()
+        };
+
+        if (archivoURL) {
+          nuevaInteraccionData.archivoURL = archivoURL;
+          nuevaInteraccionData.archivoNombre = archivoNombre;
+        }
+
+        await addDoc(collection(db, 'interacciones'), nuevaInteraccionData);
+      }
 
       // Recargar datos
       await loadData();
@@ -5948,25 +6292,99 @@ function OportunidadesModule({ currentUser }) {
         resultado: '',
         fecha: new Date().toISOString().split('T')[0]
       });
+      setArchivoAdjunto(null);
       setShowNuevaInteraccion(false);
+      setEditingInteraccionId(null);
+
+      alert('✅ Interacción guardada exitosamente');
     } catch (error) {
       console.error('Error guardando interacción:', error);
-      alert('Error al guardar la interacción');
+      alert('❌ Error al guardar la interacción: ' + error.message);
+    } finally {
+      setSubiendoArchivo(false);
     }
+  };
+
+  const handleEditarInteraccion = (interaccion) => {
+    setNuevaInteraccion({
+      tipo: interaccion.tipo,
+      descripcion: interaccion.descripcion,
+      resultado: interaccion.resultado || '',
+      fecha: interaccion.fecha
+    });
+    setEditingInteraccionId(interaccion.id);
+    setShowNuevaInteraccion(true);
+  };
+
+  const handleEliminarInteraccion = async (interaccionId) => {
+    if (window.confirm('¿Estás seguro de eliminar esta interacción?')) {
+      try {
+        await deleteDoc(doc(db, 'interacciones', interaccionId));
+        await loadData();
+      } catch (error) {
+        console.error('Error eliminando interacción:', error);
+        alert('Error al eliminar la interacción');
+      }
+    }
+  };
+
+  const handleCancelarEdicionInteraccion = () => {
+    setNuevaInteraccion({
+      tipo: 'llamada',
+      descripcion: '',
+      resultado: '',
+      fecha: new Date().toISOString().split('T')[0]
+    });
+    setArchivoAdjunto(null);
+    setEditingInteraccionId(null);
+    setShowNuevaInteraccion(false);
+  };
+
+  const handleEditarTarea = (tarea) => {
+    setNuevaTarea({
+      titulo: tarea.titulo,
+      descripcion: tarea.descripcion || '',
+      prioridad: tarea.prioridad,
+      fechaVencimiento: tarea.fechaVencimiento
+    });
+    setEditingTareaId(tarea.id);
+    setShowNuevaTarea(true);
+  };
+
+  const handleCancelarEdicionTarea = () => {
+    setNuevaTarea({
+      titulo: '',
+      descripcion: '',
+      prioridad: 'media',
+      fechaVencimiento: ''
+    });
+    setEditingTareaId(null);
+    setShowNuevaTarea(false);
   };
 
   const handleGuardarTarea = async (e) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, 'tareas'), {
-        ...nuevaTarea,
-        estado: 'pendiente',
-        fechaCreacion: new Date().toISOString(),
-        responsable: oportunidadDetalle.usuarioResponsableId || currentUser.id,
-        relacionadoCon: 'oportunidad',
-        relacionadoId: oportunidadDetalle.id,
-        relacionadoNombre: oportunidadDetalle.nombre
-      });
+      if (editingTareaId) {
+        // Editar tarea existente
+        await updateDoc(doc(db, 'tareas', editingTareaId), {
+          titulo: nuevaTarea.titulo,
+          descripcion: nuevaTarea.descripcion,
+          prioridad: nuevaTarea.prioridad,
+          fechaVencimiento: nuevaTarea.fechaVencimiento
+        });
+      } else {
+        // Crear nueva tarea
+        await addDoc(collection(db, 'tareas'), {
+          ...nuevaTarea,
+          estado: 'pendiente',
+          fechaCreacion: new Date().toISOString(),
+          responsable: oportunidadDetalle.usuarioResponsableId || currentUser.id,
+          relacionadoCon: 'oportunidad',
+          relacionadoId: oportunidadDetalle.id,
+          relacionadoNombre: oportunidadDetalle.nombre
+        });
+      }
 
       // Recargar tareas
       const tareasSnap = await getDocs(collection(db, 'tareas'));
@@ -5981,6 +6399,7 @@ function OportunidadesModule({ currentUser }) {
         prioridad: 'media',
         fechaVencimiento: ''
       });
+      setEditingTareaId(null);
       setShowNuevaTarea(false);
     } catch (error) {
       console.error('Error guardando tarea:', error);
@@ -6216,11 +6635,11 @@ function OportunidadesModule({ currentUser }) {
             <p className="text-gray-500 mt-2">Crea tu primera oportunidad de venta</p>
           </div>
         ) : vistaKanban ? (
-          <div className="flex gap-4 overflow-x-auto pb-4">
+          <div className="flex gap-3 overflow-x-auto pb-4">
             {etapas.map(etapa => (
               <div
                 key={etapa.value}
-                className="flex-shrink-0 w-80 bg-gray-50 rounded-lg p-4"
+                className="flex-1 min-w-[240px] bg-gray-50 rounded-lg p-3"
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, etapa.value)}
               >
@@ -6588,7 +7007,9 @@ function OportunidadesModule({ currentUser }) {
       )}
 
       {/* Panel de Detalle Lateral - Historial Completo */}
-      {oportunidadDetalle && (
+      {oportunidadDetalle && (() => {
+        const colores = getEmpresaColores(oportunidadDetalle.empresaId);
+        return (
         <div className="fixed inset-0 z-50 overflow-hidden">
           {/* Overlay */}
           <div
@@ -6597,16 +7018,16 @@ function OportunidadesModule({ currentUser }) {
           />
 
           {/* Panel lateral */}
-          <div className="absolute inset-y-0 right-0 max-w-2xl w-full bg-white shadow-2xl overflow-y-auto">
+          <div className="absolute inset-y-0 right-0 max-w-[900px] w-full bg-white shadow-2xl overflow-y-auto">
             {/* Header */}
-            <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-6 sticky top-0 z-10">
+            <div className="p-6 sticky top-0 z-10" style={{background: `linear-gradient(to right, ${colores.primario}, ${colores.secundario})`}}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-2xl font-bold text-white">Detalle de Oportunidad</h3>
                 <button
                   onClick={() => setOportunidadDetalle(null)}
                   className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
                 >
-                  <X size={24} />
+                  <X size={40} />
                 </button>
               </div>
               <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
@@ -6623,12 +7044,12 @@ function OportunidadesModule({ currentUser }) {
             {/* Contenido */}
             <div className="p-6 space-y-6">
               {/* Información Básica */}
-              <div className="bg-white rounded-xl border-2 border-gray-200 p-5">
+              <div className="bg-white rounded-xl border-2 p-5" style={{borderColor: colores.primario}}>
                 <h5 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <Info size={20} className="text-blue-600" />
+                  <Info size={34} style={{color: colores.primario}} />
                   Información General
                 </h5>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-2 gap-4 text-base">
                   <div>
                     <p className="text-gray-500 font-medium">Cliente</p>
                     <p className="text-gray-900 font-semibold">{getClienteNombre(oportunidadDetalle.clienteId)}</p>
@@ -6646,8 +7067,8 @@ function OportunidadesModule({ currentUser }) {
                     <div className="flex items-center gap-2 mt-1">
                       <div className="w-20 bg-gray-200 rounded-full h-2">
                         <div
-                          className="bg-blue-600 h-2 rounded-full"
-                          style={{ width: `${oportunidadDetalle.probabilidad}%` }}
+                          className="h-2 rounded-full"
+                          style={{ width: `${oportunidadDetalle.probabilidad}%`, backgroundColor: colores.primario }}
                         />
                       </div>
                       <span className="text-gray-900 font-semibold">{oportunidadDetalle.probabilidad}%</span>
@@ -6666,7 +7087,7 @@ function OportunidadesModule({ currentUser }) {
                 {oportunidadDetalle.notas && (
                   <div className="mt-4 pt-4 border-t border-gray-200">
                     <p className="text-gray-500 font-medium mb-2">Notas</p>
-                    <div className="bg-gray-50 rounded-lg p-3 text-gray-900 text-sm">
+                    <div className="bg-gray-50 rounded-lg p-3 text-gray-900 text-base">
                       {oportunidadDetalle.notas}
                     </div>
                   </div>
@@ -6674,33 +7095,48 @@ function OportunidadesModule({ currentUser }) {
               </div>
 
               {/* Timeline de Interacciones */}
-              <div className="bg-white rounded-xl border-2 border-gray-200 p-5">
+              <div className="bg-white rounded-xl border-2 p-5" style={{borderColor: colores.primario}}>
                 <div className="flex items-center justify-between mb-4">
                   <h5 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <Phone size={20} className="text-green-600" />
+                    <Phone size={26} style={{color: colores.primario}} />
                     Interacciones ({getInteraccionesPorOportunidad(oportunidadDetalle.id).length})
                   </h5>
                   <button
-                    onClick={() => setShowNuevaInteraccion(!showNuevaInteraccion)}
-                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg text-sm font-semibold flex items-center gap-1 transition-colors"
+                    onClick={() => {
+                      if (showNuevaInteraccion || editingInteraccionId) {
+                        handleCancelarEdicionInteraccion();
+                      } else {
+                        setShowNuevaInteraccion(true);
+                      }
+                    }}
+                    className="text-white px-3 py-1 rounded-lg text-base font-semibold flex items-center gap-1 transition-colors"
+                    style={{background: `linear-gradient(to right, ${colores.primario}, ${colores.secundario})`}}
+                    onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
+                    onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
                   >
-                    <Plus size={16} />
-                    {showNuevaInteraccion ? 'Cancelar' : 'Nueva'}
+                    <Plus size={20} />
+                    {showNuevaInteraccion || editingInteraccionId ? 'Cancelar' : 'Nueva'}
                   </button>
                 </div>
 
                 {/* Formulario Nueva Interacción */}
                 {showNuevaInteraccion && (
-                  <form onSubmit={handleGuardarInteraccion} className="mb-4 p-4 bg-green-50 rounded-lg border-2 border-green-200">
+                  <form onSubmit={handleGuardarInteraccion} className="mb-4 p-4 rounded-lg border-2" style={{backgroundColor: `${colores.primario}10`, borderColor: colores.primario}}>
+                    <h6 className="text-base font-bold text-gray-800 mb-3">
+                      {editingInteraccionId ? '✏️ Editar Interacción' : '➕ Nueva Interacción'}
+                    </h6>
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Tipo</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Tipo</label>
                           <select
                             required
                             value={nuevaInteraccion.tipo}
                             onChange={(e) => setNuevaInteraccion({...nuevaInteraccion, tipo: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-green-500 focus:outline-none"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-base focus:outline-none"
+                            style={{'--tw-ring-color': colores.primario}}
+                            onFocus={(e) => e.target.style.borderColor = colores.primario}
+                            onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
                           >
                             <option value="llamada">📞 Llamada</option>
                             <option value="email">📧 Email</option>
@@ -6710,42 +7146,89 @@ function OportunidadesModule({ currentUser }) {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Fecha</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Fecha</label>
                           <input
                             type="date"
                             required
                             value={nuevaInteraccion.fecha}
                             onChange={(e) => setNuevaInteraccion({...nuevaInteraccion, fecha: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-green-500 focus:outline-none"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-base focus:border-green-500 focus:outline-none"
                           />
                         </div>
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Descripción *</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-sm font-semibold text-gray-700">Descripción *</label>
+                          <button
+                            type="button"
+                            onClick={() => abrirChatIA('interaccion')}
+                            className="text-white px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                            style={{background: `linear-gradient(to right, ${colores.primario}, ${colores.secundario})`}}
+                          >
+                            ✨ Ayuda con IA
+                          </button>
+                        </div>
                         <textarea
                           required
-                          rows="2"
+                          rows="4"
                           value={nuevaInteraccion.descripcion}
                           onChange={(e) => setNuevaInteraccion({...nuevaInteraccion, descripcion: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-green-500 focus:outline-none"
-                          placeholder="¿Qué pasó en esta interacción?"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-base focus:border-green-500 focus:outline-none"
+                          placeholder="Escribe el contexto o deja vacío para que la IA lo genere automáticamente..."
                         />
+                        <p className="text-xs text-gray-500 mt-1">
+                          💡 Tip: Escribe puntos clave y haz clic en "Ayuda con IA" para generar contenido profesional
+                        </p>
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Resultado</label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Resultado</label>
                         <input
                           type="text"
                           value={nuevaInteraccion.resultado}
                           onChange={(e) => setNuevaInteraccion({...nuevaInteraccion, resultado: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-green-500 focus:outline-none"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-base focus:border-green-500 focus:outline-none"
                           placeholder="Resultado o próximos pasos"
                         />
                       </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1 flex items-center gap-1">
+                          <Paperclip size={18} />
+                          Archivo Adjunto (PDF, Minutas, Acuerdos) - Opcional
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="file"
+                            accept=".pdf,.doc,.docx,.txt"
+                            onChange={(e) => setArchivoAdjunto(e.target.files[0])}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-base focus:border-green-500 focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                          />
+                          {archivoAdjunto && (
+                            <button
+                              type="button"
+                              onClick={() => setArchivoAdjunto(null)}
+                              className="px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-semibold"
+                            >
+                              ✕ Quitar
+                            </button>
+                          )}
+                        </div>
+                        {archivoAdjunto && (
+                          <p className="text-sm text-green-700 mt-1 flex items-center gap-1 bg-green-50 px-2 py-1 rounded">
+                            <FileText size={16} />
+                            <span className="font-semibold">Seleccionado:</span> {archivoAdjunto.name}
+                          </p>
+                        )}
+                        <p className="text-sm text-gray-500 mt-1">
+                          ⚠️ Nota: Requiere Firebase Storage habilitado
+                        </p>
+                      </div>
                       <button
                         type="submit"
-                        className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-semibold transition-colors"
+                        disabled={subiendoArchivo}
+                        className="w-full text-white py-2 rounded-lg font-semibold transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        style={{background: subiendoArchivo ? undefined : `linear-gradient(to right, ${colores.primario}, ${colores.secundario})`}}
                       >
-                        Guardar Interacción
+                        {subiendoArchivo ? 'Subiendo archivo...' : editingInteraccionId ? 'Guardar Cambios' : 'Guardar Interacción'}
                       </button>
                     </div>
                   </form>
@@ -6753,24 +7236,51 @@ function OportunidadesModule({ currentUser }) {
 
                 {/* Lista de Interacciones (más nuevo primero) */}
                 {getInteraccionesPorOportunidad(oportunidadDetalle.id).length === 0 && !showNuevaInteraccion ? (
-                  <p className="text-gray-500 text-sm italic">No hay interacciones registradas</p>
+                  <p className="text-gray-500 text-base italic">No hay interacciones registradas</p>
                 ) : (
                   <div className="space-y-3">
                     {getInteraccionesPorOportunidad(oportunidadDetalle.id)
                       .sort((a, b) => new Date(b.fechaCreacion || b.fecha) - new Date(a.fechaCreacion || a.fecha))
                       .map(interaccion => (
-                        <div key={interaccion.id} className="flex gap-3 pb-3 border-b border-gray-100 last:border-0">
+                        <div
+                          key={interaccion.id}
+                          className="flex gap-3 pb-3 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition-colors"
+                          onClick={() => setInteraccionDetalleView(interaccion)}
+                        >
                           <div className="text-2xl">{getTipoInteraccionIcon(interaccion.tipo)}</div>
                           <div className="flex-1">
                             <div className="flex items-center justify-between mb-1">
                               <span className="font-semibold text-gray-900 capitalize">{interaccion.tipo}</span>
-                              <span className="text-xs text-gray-500">{formatDate(interaccion.fecha)}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-500">{formatDate(interaccion.fecha)}</span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEditarInteraccion(interaccion);
+                                  }}
+                                  className="text-blue-600 hover:text-blue-800 p-1 hover:bg-blue-50 rounded transition-colors"
+                                  title="Editar interacción"
+                                >
+                                  <Edit2 size={18} />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEliminarInteraccion(interaccion.id);
+                                  }}
+                                  className="text-red-600 hover:text-red-800 p-1 hover:bg-red-50 rounded transition-colors"
+                                  title="Eliminar interacción"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              </div>
                             </div>
-                            <p className="text-sm text-gray-700">{interaccion.descripcion}</p>
-                            {interaccion.resultado && (
-                              <p className="text-xs text-gray-600 mt-1">
-                                <span className="font-medium">Resultado:</span> {interaccion.resultado}
-                              </p>
+                            <p className="text-base text-gray-700 line-clamp-2">{interaccion.descripcion}</p>
+                            {interaccion.archivoURL && (
+                              <div className="inline-flex items-center gap-1 mt-2 text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                <Paperclip size={16} />
+                                Archivo adjunto
+                              </div>
                             )}
                           </div>
                         </div>
@@ -6780,53 +7290,75 @@ function OportunidadesModule({ currentUser }) {
               </div>
 
               {/* Tareas Relacionadas */}
-              <div className="bg-white rounded-xl border-2 border-gray-200 p-5">
+              <div className="bg-white rounded-xl border-2 p-5" style={{borderColor: colores.primario}}>
                 <div className="flex items-center justify-between mb-4">
                   <h5 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <ClipboardList size={20} className="text-purple-600" />
+                    <ClipboardList size={26} style={{color: colores.primario}} />
                     Tareas ({tareasRelacionadas.length})
                   </h5>
                   <button
-                    onClick={() => setShowNuevaTarea(!showNuevaTarea)}
-                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-sm font-semibold flex items-center gap-1 transition-colors"
+                    onClick={() => {
+                      if (showNuevaTarea || editingTareaId) {
+                        handleCancelarEdicionTarea();
+                      } else {
+                        setShowNuevaTarea(true);
+                      }
+                    }}
+                    className="text-white px-3 py-1 rounded-lg text-base font-semibold flex items-center gap-1 transition-colors"
+                    style={{background: `linear-gradient(to right, ${colores.primario}, ${colores.secundario})`}}
+                    onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
+                    onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
                   >
-                    <Plus size={16} />
-                    {showNuevaTarea ? 'Cancelar' : 'Nueva'}
+                    <Plus size={20} />
+                    {showNuevaTarea || editingTareaId ? 'Cancelar' : 'Nueva'}
                   </button>
                 </div>
 
                 {/* Formulario Nueva Tarea */}
                 {showNuevaTarea && (
-                  <form onSubmit={handleGuardarTarea} className="mb-4 p-4 bg-purple-50 rounded-lg border-2 border-purple-200">
+                  <form onSubmit={handleGuardarTarea} className="mb-4 p-4 rounded-lg border-2" style={{backgroundColor: `${colores.primario}10`, borderColor: colores.primario}}>
+                    <h6 className="text-base font-bold text-gray-800 mb-3">
+                      {editingTareaId ? '✏️ Editar Tarea' : '➕ Nueva Tarea'}
+                    </h6>
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Título *</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-sm font-semibold text-gray-700">Título *</label>
+                          <button
+                            type="button"
+                            onClick={() => abrirChatIA('tarea')}
+                            className="text-white px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                            style={{background: `linear-gradient(to right, ${colores.primario}, ${colores.secundario})`}}
+                          >
+                            ✨ Ayuda con IA
+                          </button>
+                        </div>
                         <input
                           type="text"
                           required
                           value={nuevaTarea.titulo}
                           onChange={(e) => setNuevaTarea({...nuevaTarea, titulo: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-base focus:border-purple-500 focus:outline-none"
                           placeholder="¿Qué hay que hacer?"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Descripción</label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Descripción</label>
                         <textarea
                           rows="2"
                           value={nuevaTarea.descripcion}
                           onChange={(e) => setNuevaTarea({...nuevaTarea, descripcion: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-base focus:border-purple-500 focus:outline-none"
                           placeholder="Detalles de la tarea..."
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Prioridad</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Prioridad</label>
                           <select
                             value={nuevaTarea.prioridad}
                             onChange={(e) => setNuevaTarea({...nuevaTarea, prioridad: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-base focus:border-purple-500 focus:outline-none"
                           >
                             <option value="baja">Baja</option>
                             <option value="media">Media</option>
@@ -6835,21 +7367,24 @@ function OportunidadesModule({ currentUser }) {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">Fecha Vencimiento *</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Fecha Vencimiento *</label>
                           <input
                             type="date"
                             required
                             value={nuevaTarea.fechaVencimiento}
                             onChange={(e) => setNuevaTarea({...nuevaTarea, fechaVencimiento: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-base focus:border-purple-500 focus:outline-none"
                           />
                         </div>
                       </div>
                       <button
                         type="submit"
-                        className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg font-semibold transition-colors"
+                        className="w-full text-white py-2 rounded-lg font-semibold transition-colors"
+                        style={{background: `linear-gradient(to right, ${colores.primario}, ${colores.secundario})`}}
+                        onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
+                        onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
                       >
-                        Guardar Tarea
+                        {editingTareaId ? 'Guardar Cambios' : 'Guardar Tarea'}
                       </button>
                     </div>
                   </form>
@@ -6857,7 +7392,7 @@ function OportunidadesModule({ currentUser }) {
 
                 {/* Lista de Tareas (más nuevo primero) */}
                 {tareasRelacionadas.length === 0 && !showNuevaTarea ? (
-                  <p className="text-gray-500 text-sm italic">No hay tareas relacionadas</p>
+                  <p className="text-gray-500 text-base italic">No hay tareas relacionadas</p>
                 ) : (
                   <div className="space-y-2">
                     {tareasRelacionadas
@@ -6873,18 +7408,29 @@ function OportunidadesModule({ currentUser }) {
                           </div>
                           <div className="flex-1">
                             <div className="flex items-start justify-between mb-1">
-                              <p className="font-semibold text-gray-900 text-sm">{tarea.titulo}</p>
-                              <span className={`text-xs px-2 py-1 rounded font-semibold ${
-                                tarea.estado === 'completada' ? 'bg-green-100 text-green-800' :
-                                tarea.estado === 'en_progreso' ? 'bg-blue-100 text-blue-800' :
-                                'bg-orange-100 text-orange-800'
-                              }`}>
-                                {tarea.estado === 'completada' ? 'Completada' :
-                                 tarea.estado === 'en_progreso' ? 'En Progreso' : 'Pendiente'}
-                              </span>
+                              <div className="flex-1">
+                                <p className="font-semibold text-gray-900 text-base">{tarea.titulo}</p>
+                              </div>
+                              <div className="flex items-center gap-2 ml-2">
+                                <span className={`text-base px-2 py-1 rounded font-semibold ${
+                                  tarea.estado === 'completada' ? 'bg-green-100 text-green-800' :
+                                  tarea.estado === 'en_progreso' ? 'bg-blue-100 text-blue-800' :
+                                  'bg-orange-100 text-orange-800'
+                                }`}>
+                                  {tarea.estado === 'completada' ? 'Completada' :
+                                   tarea.estado === 'en_progreso' ? 'En Progreso' : 'Pendiente'}
+                                </span>
+                                <button
+                                  onClick={() => handleEditarTarea(tarea)}
+                                  className="text-blue-600 hover:text-blue-800 p-1 hover:bg-blue-50 rounded transition-colors"
+                                  title="Editar tarea"
+                                >
+                                  <Edit2 size={18} />
+                                </button>
+                              </div>
                             </div>
-                            <p className="text-xs text-gray-600 mb-1">{tarea.descripcion}</p>
-                            <div className="flex items-center gap-4 text-xs text-gray-500">
+                            <p className="text-base text-gray-600 mb-1">{tarea.descripcion}</p>
+                            <div className="flex items-center gap-4 text-base text-gray-500">
                               <span>📅 Vence: {formatDate(tarea.fechaVencimiento)}</span>
                               <span className={`font-semibold ${
                                 tarea.prioridad === 'urgente' ? 'text-red-600' :
@@ -6903,14 +7449,17 @@ function OportunidadesModule({ currentUser }) {
               </div>
 
               {/* Botones de acción */}
-              <div className="sticky bottom-0 bg-white border-t-2 border-gray-200 pt-4">
+              <div className="sticky bottom-0 bg-white border-t-2 pt-4" style={{borderColor: colores.primario}}>
                 <div className="flex gap-3">
                   <button
                     onClick={() => {
                       handleEdit(oportunidadDetalle);
                       setOportunidadDetalle(null);
                     }}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 text-white px-6 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                    style={{background: `linear-gradient(to right, ${colores.primario}, ${colores.secundario})`}}
+                    onMouseOver={(e) => e.currentTarget.style.opacity = '0.9'}
+                    onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
                   >
                     <Edit2 size={18} />
                     Editar Oportunidad
@@ -6926,7 +7475,246 @@ function OportunidadesModule({ currentUser }) {
             </div>
           </div>
         </div>
+        );
+      })()}
+
+      {/* Modal Detalle de Interacción */}
+      {interaccionDetalleView && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setInteraccionDetalleView(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-green-600 to-green-700 text-white p-6 rounded-t-xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="text-4xl">{getTipoInteraccionIcon(interaccionDetalleView.tipo)}</div>
+                  <div>
+                    <h2 className="text-2xl font-bold capitalize">{interaccionDetalleView.tipo}</h2>
+                    <p className="text-green-100 text-sm">{formatDate(interaccionDetalleView.fecha)}</p>
+                  </div>
+                </div>
+                <button onClick={() => setInteraccionDetalleView(null)} className="text-white hover:text-gray-200">
+                  <X size={32} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Descripción */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Descripción</h3>
+                <p className="text-gray-900 whitespace-pre-wrap">{interaccionDetalleView.descripcion}</p>
+              </div>
+
+              {/* Resultado */}
+              {interaccionDetalleView.resultado && (
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <h3 className="text-sm font-bold text-blue-900 mb-2 uppercase tracking-wide">Resultado</h3>
+                  <p className="text-gray-900 whitespace-pre-wrap">{interaccionDetalleView.resultado}</p>
+                </div>
+              )}
+
+              {/* Archivo Adjunto */}
+              {interaccionDetalleView.archivoURL && (
+                <div className="bg-green-50 rounded-lg p-4">
+                  <h3 className="text-sm font-bold text-green-900 mb-3 uppercase tracking-wide flex items-center gap-2">
+                    <Paperclip size={16} />
+                    Archivo Adjunto
+                  </h3>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 bg-white rounded-lg p-3 border-2 border-green-200">
+                      <p className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                        <FileText size={18} className="text-green-600" />
+                        {interaccionDetalleView.archivoNombre || 'Archivo adjunto'}
+                      </p>
+                    </div>
+                    <a
+                      href={interaccionDetalleView.archivoURL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <ExternalLink size={18} />
+                      Abrir
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* Metadata */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">Información Adicional</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-500 font-medium">Tipo de Interacción</p>
+                    <p className="text-gray-900 font-semibold capitalize">{interaccionDetalleView.tipo}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 font-medium">Fecha</p>
+                    <p className="text-gray-900 font-semibold">{formatDate(interaccionDetalleView.fecha)}</p>
+                  </div>
+                  {interaccionDetalleView.fechaCreacion && (
+                    <div className="col-span-2">
+                      <p className="text-gray-500 font-medium">Creado el</p>
+                      <p className="text-gray-900">{new Date(interaccionDetalleView.fechaCreacion).toLocaleString('es-MX')}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Acciones */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setInteraccionDetalleView(null);
+                    handleEditarInteraccion(interaccionDetalleView);
+                  }}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                >
+                  <Edit2 size={18} />
+                  Editar
+                </button>
+                <button
+                  onClick={() => setInteraccionDetalleView(null)}
+                  className="px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-semibold transition-colors"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
+
+      {/* Modal Chat con IA */}
+      {showChatIA && oportunidadDetalle && (() => {
+        const colores = getEmpresaColores(oportunidadDetalle.empresaId);
+        return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col">
+            {/* Header */}
+            <div className="p-6 border-b" style={{background: `linear-gradient(to right, ${colores.primario}, ${colores.secundario})`}}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  ✨ Asistente de IA
+                  <span className="text-sm font-normal opacity-90">
+                    ({chatIAType === 'interaccion' ? 'Interacción' : 'Tarea'})
+                  </span>
+                </h3>
+                <button
+                  onClick={() => setShowChatIA(false)}
+                  className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Mensajes del chat */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
+              {chatIAMessages.map((mensaje, index) => (
+                <div
+                  key={index}
+                  className={`flex ${mensaje.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[80%] rounded-lg p-4 ${
+                      mensaje.role === 'user'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-white border-2 shadow-sm'
+                    }`}
+                    style={mensaje.role === 'assistant' ? {borderColor: colores.primario} : {}}
+                  >
+                    {mensaje.role === 'assistant' && chatIAType === 'tarea' ? (
+                      // Para tareas, intentar parsear el JSON
+                      (() => {
+                        try {
+                          const data = JSON.parse(mensaje.content);
+                          return (
+                            <div className="space-y-2">
+                              <div>
+                                <span className="font-bold text-sm" style={{color: colores.primario}}>Título:</span>
+                                <p className="text-base text-gray-900 mt-1">{data.titulo}</p>
+                              </div>
+                              <div>
+                                <span className="font-bold text-sm" style={{color: colores.primario}}>Descripción:</span>
+                                <p className="text-base text-gray-700 mt-1 whitespace-pre-line">{data.descripcion}</p>
+                              </div>
+                            </div>
+                          );
+                        } catch {
+                          return <p className="text-base text-gray-800 whitespace-pre-line">{mensaje.content}</p>;
+                        }
+                      })()
+                    ) : (
+                      <p className="text-base whitespace-pre-line">{mensaje.content}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {enviandoMensajeIA && (
+                <div className="flex justify-start">
+                  <div className="bg-white border-2 rounded-lg p-4" style={{borderColor: colores.primario}}>
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <div className="animate-spin h-4 w-4 border-2 border-gray-600 border-t-transparent rounded-full"></div>
+                      Pensando...
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Input para enviar mensajes */}
+            <div className="p-4 border-t bg-white">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={mensajeUsuarioIA}
+                  onChange={(e) => setMensajeUsuarioIA(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !enviandoMensajeIA) {
+                      enviarMensajeIA();
+                    }
+                  }}
+                  placeholder="Escribe tus ajustes... (ej: 'hazlo más corto', 'agrega descuento 10%')"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                  disabled={enviandoMensajeIA}
+                />
+                <button
+                  onClick={enviarMensajeIA}
+                  disabled={enviandoMensajeIA || !mensajeUsuarioIA.trim()}
+                  className="px-6 py-2 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{background: `linear-gradient(to right, ${colores.primario}, ${colores.secundario})`}}
+                >
+                  Enviar
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                💡 Pide ajustes hasta que quede perfecto, luego acepta el contenido
+              </p>
+            </div>
+
+            {/* Footer con botones */}
+            <div className="p-4 border-t bg-gray-50 flex gap-3 justify-end">
+              <button
+                onClick={() => setShowChatIA(false)}
+                className="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-semibold transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={aceptarContenidoIA}
+                disabled={chatIAMessages.filter(m => m.role === 'assistant').length === 0}
+                className="px-6 py-2 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{background: `linear-gradient(to right, ${colores.primario}, ${colores.secundario})`}}
+              >
+                ✓ Aceptar y Usar
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
     </div>
   );
 }
