@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download, Calendar, ChevronLeft, ChevronRight, Mail, Send, Menu, UserPlus, ArrowRight, DollarSign, Target, Clock, Award, Info, MessageCircle, Bot, Minimize2, GitBranch, FileText, Paperclip, ExternalLink } from 'lucide-react';
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, storage } from './firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { db, storage, auth } from './firebase';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import * as XLSX from 'xlsx';
 
@@ -340,11 +341,16 @@ export default function App() {
     localStorage.setItem('currentUser', JSON.stringify(usuario));
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setIsAuthenticated(false);
-    localStorage.removeItem('currentUser');
-    setCurrentModule('dashboard');
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      localStorage.removeItem('currentUser');
+      setCurrentModule('dashboard');
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
+    }
   };
 
   // Verificar sesión al cargar
@@ -9026,34 +9032,45 @@ function LoginModule({ onLogin }) {
     setError('');
 
     try {
-      // Buscar usuario en Firestore por email
+      // Autenticar con Firebase Auth
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+
+      // Buscar datos del usuario en Firestore
       const usuariosSnapshot = await getDocs(collection(db, 'usuarios'));
       const usuario = usuariosSnapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .find(u => u.email === email);
 
       if (!usuario) {
-        setError('Usuario no encontrado');
+        setError('Usuario no encontrado en la base de datos');
+        await signOut(auth);
         setLoading(false);
         return;
       }
 
       if (!usuario.activo) {
         setError('Usuario inactivo - Contacta al administrador');
+        await signOut(auth);
         setLoading(false);
         return;
       }
 
-      // Por ahora, password simple (en producción usar Firebase Auth)
-      if (password === 'admin123' || password === usuario.password || !usuario.password) {
-        // Login exitoso
-        onLogin(usuario);
-      } else {
-        setError('Contraseña incorrecta');
-      }
+      // Login exitoso
+      onLogin({ ...usuario, uid: firebaseUser.uid });
     } catch (err) {
       console.error('Error en login:', err);
-      setError('Error al iniciar sesión');
+      if (err.code === 'auth/user-not-found') {
+        setError('Usuario no encontrado en Firebase Auth');
+      } else if (err.code === 'auth/wrong-password') {
+        setError('Contraseña incorrecta');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('Email inválido');
+      } else if (err.code === 'auth/invalid-credential') {
+        setError('Credenciales inválidas');
+      } else {
+        setError('Error al iniciar sesión: ' + err.message);
+      }
     } finally {
       setLoading(false);
     }
