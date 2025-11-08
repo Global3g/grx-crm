@@ -2035,7 +2035,6 @@ function UsuariosModule() {
           rol: "administrador",
           empresaId: "",
           equipoId: "",
-          password: "admin123",
           activo: true,
           fechaCreacion: new Date().toISOString(),
           permisos: getPermisosporRol('administrador')
@@ -2047,7 +2046,6 @@ function UsuariosModule() {
           rol: "gerente",
           empresaId: "",
           equipoId: "equipo-ventas",
-          password: "admin123",
           activo: true,
           fechaCreacion: new Date().toISOString(),
           permisos: getPermisosporRol('gerente')
@@ -2059,7 +2057,6 @@ function UsuariosModule() {
           rol: "ejecutivo",
           empresaId: "",
           equipoId: "equipo-ventas",
-          password: "admin123",
           activo: true,
           fechaCreacion: new Date().toISOString(),
           permisos: getPermisosporRol('ejecutivo')
@@ -2071,7 +2068,6 @@ function UsuariosModule() {
           rol: "invitado",
           empresaId: "",
           equipoId: "",
-          password: "admin123",
           activo: true,
           fechaCreacion: new Date().toISOString(),
           permisos: getPermisosporRol('invitado')
@@ -2082,7 +2078,7 @@ function UsuariosModule() {
         await addDoc(collection(db, 'usuarios'), usuario);
       }
 
-      alert('✅ 4 usuarios de prueba creados!\n\nPuedes iniciar sesión con:\n- admin@grx.com\n- gerente@grx.com\n- ejecutivo@grx.com\n- invitado@grx.com\n\nPassword: admin123');
+      alert('✅ 4 usuarios de prueba creados en Firestore!\n\nEmails:\n- admin@grx.com\n- gerente@grx.com\n- ejecutivo@grx.com\n- invitado@grx.com\n\nNOTA: Debes crear estos usuarios en Firebase Auth manualmente con sus passwords.');
       loadData();
     } catch (error) {
       console.error('Error creando usuarios:', error);
@@ -9133,11 +9129,10 @@ function LoginModule({ onLogin }) {
           </button>
         </form>
 
-        {/* Info para demo */}
+        {/* Info */}
         <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <p className="text-xs text-blue-800 font-semibold mb-2">🔐 Demo - Acceso rápido:</p>
-          <p className="text-xs text-blue-700">Usa cualquier email de usuario existente</p>
-          <p className="text-xs text-blue-700">Contraseña: <code className="bg-blue-100 px-2 py-1 rounded">admin123</code></p>
+          <p className="text-xs text-blue-800 font-semibold mb-2">🔐 Acceso Seguro</p>
+          <p className="text-xs text-blue-700">Usa tu email y contraseña registrados en Firebase Auth</p>
         </div>
       </div>
     </div>
