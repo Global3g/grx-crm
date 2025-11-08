@@ -3822,6 +3822,7 @@ function InteraccionesModule() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [showEmailComposer, setShowEmailComposer] = useState(false);
+  const [interaccionDetalle, setInteraccionDetalle] = useState(null);
   const [emailData, setEmailData] = useState({
     clienteId: '',
     subject: '',
@@ -3900,15 +3901,29 @@ function InteraccionesModule() {
     e.preventDefault();
     console.log('Guardando interacción...', formData);
     try {
+      // Limpiar datos para evitar undefined
+      const dataToSave = {
+        tipo: formData.tipo,
+        clienteId: formData.clienteId || '',
+        usuarioId: formData.usuarioId || '',
+        oportunidadId: formData.oportunidadId || '',
+        fecha: formData.fecha,
+        hora: formData.hora || '',
+        duracion: formData.duracion || '',
+        notas: formData.notas || '',
+        seguimiento: formData.seguimiento || '',
+        completado: formData.completado || false
+      };
+
       if (editingId) {
         // Actualizar interacción existente
         const interaccionRef = doc(db, 'interacciones', editingId);
-        await updateDoc(interaccionRef, formData);
+        await updateDoc(interaccionRef, dataToSave);
         console.log('Interacción actualizada');
       } else {
         // Crear nueva interacción
         const docRef = await addDoc(collection(db, 'interacciones'), {
-          ...formData,
+          ...dataToSave,
           fechaCreacion: new Date().toISOString()
         });
         console.log('Interacción creada con ID:', docRef.id);
@@ -3931,9 +3946,9 @@ function InteraccionesModule() {
       fecha: interaccion.fecha,
       hora: interaccion.hora || '',
       duracion: interaccion.duracion || '',
-      notas: interaccion.notas,
+      notas: interaccion.notas || '',
       seguimiento: interaccion.seguimiento || '',
-      completado: interaccion.completado
+      completado: interaccion.completado || false
     });
     setEditingId(interaccion.id);
     setShowForm(true);
@@ -4252,7 +4267,11 @@ function InteraccionesModule() {
                 {interacciones.map(interaccion => {
                   const tipoData = getTipoData(interaccion.tipo);
                   return (
-                    <tr key={interaccion.id} className="border-b border-gray-200 hover:bg-gray-50">
+                    <tr
+                      key={interaccion.id}
+                      className="border-b border-gray-200 hover:bg-gray-50 cursor-pointer"
+                      onClick={() => setInteraccionDetalle(interaccion)}
+                    >
                       <td className="px-6 py-4">
                         <span className={`px-3 py-1 rounded-full text-sm font-semibold ${tipoData.color}`}>
                           {tipoData.icon} {tipoData.label}
@@ -4281,7 +4300,7 @@ function InteraccionesModule() {
                           {interaccion.completado ? 'Completada' : 'Pendiente'}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-2">
                           <button
                             onClick={() => handleEdit(interaccion)}
@@ -4413,6 +4432,135 @@ function InteraccionesModule() {
                   <strong>Nota:</strong> Al hacer clic en "Enviar Email", se abrirá tu cliente de correo predeterminado
                   con el email pre-rellenado. Asegúrate de enviar el correo desde tu aplicación de email.
                 </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Detalle de Interacción */}
+      {interaccionDetalle && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setInteraccionDetalle(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-orange-500 to-red-500 text-white p-6 rounded-t-xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Phone size={32} />
+                  <div>
+                    <h3 className="text-2xl font-bold">Detalle de Interacción</h3>
+                    <p className="text-orange-100 text-sm mt-1">
+                      {(() => {
+                        const tipoData = getTipoData(interaccionDetalle.tipo);
+                        return `${tipoData.icon} ${tipoData.label}`;
+                      })()}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setInteraccionDetalle(null)}
+                  className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-6">
+              {/* Información Principal */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-500 mb-1">Cliente</p>
+                  <p className="text-lg font-semibold text-gray-900">{getClienteNombre(interaccionDetalle.clienteId)}</p>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-500 mb-1">Usuario Responsable</p>
+                  <p className="text-lg font-semibold text-gray-900">{getUsuarioNombre(interaccionDetalle.usuarioId)}</p>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-500 mb-1">Fecha</p>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {new Date(interaccionDetalle.fecha).toLocaleDateString('es-MX', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </p>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-500 mb-1">Hora y Duración</p>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {interaccionDetalle.hora || 'No especificada'}
+                    {interaccionDetalle.duracion && ` - ${interaccionDetalle.duracion} min`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Estado */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-500 mb-2">Estado</p>
+                <span className={`inline-flex px-4 py-2 rounded-full text-base font-semibold ${
+                  interaccionDetalle.completado
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-yellow-100 text-yellow-800'
+                }`}>
+                  {interaccionDetalle.completado ? '✓ Completada' : '⏱ Pendiente'}
+                </span>
+              </div>
+
+              {/* Oportunidad relacionada */}
+              {interaccionDetalle.oportunidadId && (
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-700 mb-1 font-semibold">Oportunidad Relacionada</p>
+                  <p className="text-lg text-blue-900">
+                    {oportunidades.find(o => o.id === interaccionDetalle.oportunidadId)?.nombre || 'No especificada'}
+                  </p>
+                </div>
+              )}
+
+              {/* Notas */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-500 mb-2 font-semibold">Notas</p>
+                <p className="text-base text-gray-900 whitespace-pre-wrap">
+                  {interaccionDetalle.notas || 'Sin notas registradas'}
+                </p>
+              </div>
+
+              {/* Seguimiento */}
+              {interaccionDetalle.seguimiento && (
+                <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                  <p className="text-sm text-purple-700 mb-2 font-semibold">Seguimiento</p>
+                  <p className="text-base text-purple-900 whitespace-pre-wrap">{interaccionDetalle.seguimiento}</p>
+                </div>
+              )}
+
+              {/* Fecha de creación */}
+              {interaccionDetalle.fechaCreacion && (
+                <div className="text-sm text-gray-400 text-center pt-4 border-t">
+                  Registrado el {new Date(interaccionDetalle.fechaCreacion).toLocaleString('es-MX')}
+                </div>
+              )}
+
+              {/* Botones de acción */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    handleEdit(interaccionDetalle);
+                    setInteraccionDetalle(null);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all"
+                >
+                  <Edit2 size={20} />
+                  Editar
+                </button>
+                <button
+                  onClick={() => setInteraccionDetalle(null)}
+                  className="px-6 py-3 border-2 border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-all"
+                >
+                  Cerrar
+                </button>
               </div>
             </div>
           </div>
@@ -5348,7 +5496,12 @@ function ProyectosModule() {
     <div>
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-8 rounded-lg border-4 border-orange-500 shadow-lg mb-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-4xl font-bold">Proyectos</h2>
+          <div>
+            <h2 className="text-4xl font-bold">Proyectos</h2>
+            <p className="text-blue-200 mt-2 text-lg">
+              Gestiona proyectos completos para tus clientes: asigna presupuestos, fechas, y lleva el control del progreso de cada uno 📊
+            </p>
+          </div>
           <button
             onClick={() => setShowForm(!showForm)}
             className="flex items-center gap-2 bg-white text-blue-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all"
@@ -6253,8 +6406,8 @@ Responde en formato JSON:
         // Editar interacción existente
         const updateData = {
           tipo: nuevaInteraccion.tipo,
-          descripcion: nuevaInteraccion.descripcion,
-          resultado: nuevaInteraccion.resultado,
+          descripcion: nuevaInteraccion.descripcion || '',
+          resultado: nuevaInteraccion.resultado || '',
           fecha: nuevaInteraccion.fecha
         };
 
@@ -6308,7 +6461,7 @@ Responde en formato JSON:
   const handleEditarInteraccion = (interaccion) => {
     setNuevaInteraccion({
       tipo: interaccion.tipo,
-      descripcion: interaccion.descripcion,
+      descripcion: interaccion.descripcion || '',
       resultado: interaccion.resultado || '',
       fecha: interaccion.fecha
     });
@@ -6731,21 +6884,21 @@ Responde en formato JSON:
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Oportunidad</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Responsable</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prob. Manual</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gradient-to-r from-purple-50 to-pink-50">
-                    <div className="flex items-center gap-1">
-                      <Award size={16} className="text-purple-600" />
+                  <th className="px-6 py-10 text-center text-base font-bold text-black uppercase tracking-wider">Oportunidad</th>
+                  <th className="px-6 py-10 text-center text-base font-bold text-black uppercase tracking-wider">Cliente</th>
+                  <th className="px-6 py-10 text-center text-base font-bold text-black uppercase tracking-wider">Responsable</th>
+                  <th className="px-6 py-10 text-center text-base font-bold text-black uppercase tracking-wider">Valor</th>
+                  <th className="px-6 py-10 text-center text-base font-bold text-black uppercase tracking-wider">Prob. Manual</th>
+                  <th className="px-6 py-10 text-center text-base font-bold text-black uppercase tracking-wider bg-gradient-to-r from-purple-50 to-pink-50">
+                    <div className="flex items-center justify-center gap-1">
+                      <Award size={20} className="text-purple-600" />
                       <span>IA Prob.</span>
                     </div>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gradient-to-r from-pink-50 to-purple-50">Siguiente Acción</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Etapa</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cierre Est.</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                  <th className="px-6 py-10 text-center text-base font-bold text-black uppercase tracking-wider bg-gradient-to-r from-pink-50 to-purple-50">Siguiente Acción</th>
+                  <th className="px-6 py-10 text-center text-base font-bold text-black uppercase tracking-wider">Etapa</th>
+                  <th className="px-6 py-10 text-center text-base font-bold text-black uppercase tracking-wider">Cierre Est.</th>
+                  <th className="px-6 py-10 text-center text-base font-bold text-black uppercase tracking-wider">Acciones</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -6756,47 +6909,47 @@ Responde en formato JSON:
 
                   return (
                   <tr key={oportunidad.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-gray-900">{oportunidad.nombre}</div>
+                    <td className="px-6 py-12 text-center">
+                      <div className="text-xl font-bold text-black">{oportunidad.nombre}</div>
                       {oportunidad.empresaId && (
-                        <div className="text-xs text-gray-500">{getEmpresaNombre(oportunidad.empresaId)}</div>
+                        <div className="text-sm text-gray-500">{getEmpresaNombre(oportunidad.empresaId)}</div>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{getClienteNombre(oportunidad.clienteId)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{getUsuarioNombre(oportunidad.usuarioResponsableId)}</td>
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">{formatCurrency(oportunidad.valor)}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-20 bg-gray-200 rounded-full h-2">
+                    <td className="px-6 py-12 text-center text-base text-gray-900">{getClienteNombre(oportunidad.clienteId)}</td>
+                    <td className="px-6 py-12 text-center text-base text-gray-900">{getUsuarioNombre(oportunidad.usuarioResponsableId)}</td>
+                    <td className="px-6 py-12 text-center text-base font-semibold text-gray-900">{formatCurrency(oportunidad.valor)}</td>
+                    <td className="px-6 py-12">
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="w-24 bg-gray-200 rounded-full h-3">
                           <div
-                            className="bg-blue-600 h-2 rounded-full"
+                            className="bg-blue-600 h-3 rounded-full"
                             style={{ width: `${oportunidad.probabilidad || 0}%` }}
                           ></div>
                         </div>
-                        <span className="text-sm text-gray-600">{oportunidad.probabilidad}%</span>
+                        <span className="text-base text-gray-600">{oportunidad.probabilidad}%</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 bg-gradient-to-r from-purple-50 to-pink-50">
-                      <div className="flex items-center gap-2">
-                        <Award size={16} className={aiProbabilidad >= 70 ? 'text-green-600' : aiProbabilidad >= 40 ? 'text-yellow-600' : 'text-red-600'} />
-                        <div className="w-20 bg-gray-200 rounded-full h-2">
+                    <td className="px-6 py-12 bg-gradient-to-r from-purple-50 to-pink-50">
+                      <div className="flex items-center justify-center gap-2">
+                        <Award size={20} className={aiProbabilidad >= 70 ? 'text-green-600' : aiProbabilidad >= 40 ? 'text-yellow-600' : 'text-red-600'} />
+                        <div className="w-24 bg-gray-200 rounded-full h-3">
                           <div
-                            className={`h-2 rounded-full ${aiProbabilidad >= 70 ? 'bg-green-600' : aiProbabilidad >= 40 ? 'bg-yellow-600' : 'bg-red-600'}`}
+                            className={`h-3 rounded-full ${aiProbabilidad >= 70 ? 'bg-green-600' : aiProbabilidad >= 40 ? 'bg-yellow-600' : 'bg-red-600'}`}
                             style={{ width: `${aiProbabilidad}%` }}
                           ></div>
                         </div>
-                        <span className={`text-sm font-bold ${aiProbabilidad >= 70 ? 'text-green-600' : aiProbabilidad >= 40 ? 'text-yellow-600' : 'text-red-600'}`}>
+                        <span className={`text-base font-bold ${aiProbabilidad >= 70 ? 'text-green-600' : aiProbabilidad >= 40 ? 'text-yellow-600' : 'text-red-600'}`}>
                           {aiProbabilidad}%
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 bg-gradient-to-r from-pink-50 to-purple-50">
-                      <div className="space-y-1">
+                    <td className="px-6 py-12 bg-gradient-to-r from-pink-50 to-purple-50">
+                      <div className="space-y-1 flex flex-col items-center">
                         <div className="flex items-center gap-2">
-                          <span className="text-base">{siguienteAccion.icono}</span>
-                          <span className="font-semibold text-xs text-gray-900">{siguienteAccion.accion}</span>
+                          <span className="text-lg">{siguienteAccion.icono}</span>
+                          <span className="font-semibold text-sm text-gray-900">{siguienteAccion.accion}</span>
                         </div>
-                        <div className={`text-xs px-2 py-0.5 rounded inline-block ${
+                        <div className={`text-sm px-2 py-1 rounded inline-block ${
                           siguienteAccion.prioridad === 'alta' ? 'bg-red-100 text-red-800' :
                           siguienteAccion.prioridad === 'media' ? 'bg-yellow-100 text-yellow-800' :
                           'bg-gray-100 text-gray-800'
@@ -6805,25 +6958,29 @@ Responde en formato JSON:
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getEtapaColor(oportunidad.etapa)}`}>
+                    <td className="px-6 py-12 text-center">
+                      <span className={`px-4 py-2 inline-flex text-sm leading-5 font-semibold rounded-full ${getEtapaColor(oportunidad.etapa)}`}>
                         {oportunidad.etapa}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{formatDate(oportunidad.fechaEstimadaCierre)}</td>
-                    <td className="px-6 py-4 text-sm font-medium space-x-3">
-                      <button
-                        onClick={() => handleEdit(oportunidad)}
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleDelete(oportunidad.id)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        Eliminar
-                      </button>
+                    <td className="px-6 py-12 text-center text-base text-gray-900">{formatDate(oportunidad.fechaEstimadaCierre)}</td>
+                    <td className="px-6 py-12 text-center text-base font-medium">
+                      <div className="flex items-center justify-center gap-3">
+                        <button
+                          onClick={() => handleEdit(oportunidad)}
+                          className="text-blue-600 hover:text-blue-900 p-2 hover:bg-blue-50 rounded transition-colors"
+                          title="Editar"
+                        >
+                          <Edit2 size={20} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(oportunidad.id)}
+                          className="text-red-600 hover:text-red-900 p-2 hover:bg-red-50 rounded transition-colors"
+                          title="Eliminar"
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                   );
