@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download, Calendar, ChevronLeft, ChevronRight, Mail, Send, Menu, UserPlus, ArrowRight, DollarSign, Target, Clock, Award, Info, MessageCircle, Bot, Minimize2, GitBranch, FileText, Paperclip, ExternalLink } from 'lucide-react';
+import { Building2, Users, LogIn, Settings, UserCircle, Phone, ClipboardList, Briefcase, TrendingUp, BarChart3, Bell, Plug, Plus, Trash2, Edit2, Save, X, Download, Calendar, ChevronLeft, ChevronRight, Mail, Send, Menu, UserPlus, ArrowRight, DollarSign, Target, Clock, Award, Info, MessageCircle, Bot, Minimize2, GitBranch, FileText, Paperclip, ExternalLink, HelpCircle } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
@@ -81,11 +81,14 @@ const calcularProbabilidadCierre = (oportunidad, interacciones = []) => {
 
   // Factor 1: Etapa actual (base según pipeline)
   const probabilidadPorEtapa = {
-    'prospecto': 10,
-    'calificacion': 25,
-    'propuesta': 50,
-    'negociacion': 75,
-    'cierre': 90
+    'Contacto Inicial': 10,
+    'Calificación': 20,
+    'Análisis de Necesidades': 35,
+    'Presentación/Demo': 50,
+    'Propuesta Enviada': 60,
+    'Negociación': 75,
+    'Cerrado Ganado': 95,
+    'Cerrado Perdido': 0
   };
   probabilidad = probabilidadPorEtapa[oportunidad.etapa] || 20;
 
@@ -407,7 +410,7 @@ export default function App() {
         w-64 flex-shrink-0 bg-gradient-to-b from-gray-900 to-gray-800 shadow-lg border-r-4 border-orange-500
         fixed lg:static inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        overflow-y-auto
+        flex flex-col overflow-hidden
       `}>
         <div className="py-4 lg:py-8 px-4 lg:px-6 border-b-2 border-gray-700">
           <div className="flex flex-col items-center justify-center">
@@ -433,7 +436,7 @@ export default function App() {
             </div>
           </div>
         </div>
-        <nav className="p-3 lg:p-6 pb-40">
+        <nav className="p-3 lg:p-6 flex-1 overflow-y-auto">
           {modules.map(module => {
             const Icon = module.icon;
             return (
@@ -458,7 +461,7 @@ export default function App() {
         </nav>
 
         {/* User Info y Logout */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t-2 border-gray-700 bg-gray-900">
+        <div className="p-4 border-t-2 border-gray-700 bg-gray-900 flex-shrink-0">
           <div className="bg-gray-800 rounded-lg p-3 mb-3">
             <div className="flex items-center gap-3 mb-2">
               <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-full w-10 h-10 flex items-center justify-center text-white font-bold">
@@ -636,7 +639,7 @@ function DashboardModule() {
       });
 
       // Agrupar oportunidades por etapa
-      const etapas = ['Contacto Inicial', 'Propuesta Enviada', 'Negociación', 'Cerrado Ganado', 'Cerrado Perdido'];
+      const etapas = ['Contacto Inicial', 'Calificación', 'Análisis de Necesidades', 'Presentación/Demo', 'Propuesta Enviada', 'Negociación', 'Cerrado Ganado', 'Cerrado Perdido'];
       const oportunidadesAgrupadas = etapas.map(etapa => {
         const ops = oportunidades.filter(o => o.etapa === etapa);
         return {
@@ -1400,14 +1403,28 @@ function EmpresasModule() {
     }
   };
 
-  const handleLogoUpload = (e) => {
+  const handleLogoUpload = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData({...formData, logo: reader.result});
-      };
-      reader.readAsDataURL(file);
+      // Validar tamaño (máx 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        alert('El logo debe ser menor a 5MB');
+        return;
+      }
+
+      try {
+        // Subir a Firebase Storage
+        const fileName = `logos/${Date.now()}_${file.name}`;
+        const storageRef = ref(storage, fileName);
+        await uploadBytes(storageRef, file);
+        const logoURL = await getDownloadURL(storageRef);
+
+        setFormData({...formData, logo: logoURL});
+        alert('Logo cargado exitosamente');
+      } catch (error) {
+        console.error('Error subiendo logo:', error);
+        alert('Error al cargar el logo: ' + error.message);
+      }
     }
   };
 
@@ -5352,6 +5369,14 @@ function ProyectosModule() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [proyectoDetalle, setProyectoDetalle] = useState(null);
+  const [tareasProyecto, setTareasProyecto] = useState([]);
+  const [avancesProyecto, setAvancesProyecto] = useState([]);
+  const [showModalAvance, setShowModalAvance] = useState(false);
+  const [editingAvanceId, setEditingAvanceId] = useState(null);
+  const [nuevoAvance, setNuevoAvance] = useState('');
+  const [documentosAvance, setDocumentosAvance] = useState([]);
+  const [subiendoDocumento, setSubiendoDocumento] = useState(false);
   const [formData, setFormData] = useState({
     nombre: '',
     descripcion: '',
@@ -5492,6 +5517,178 @@ function ProyectosModule() {
 
   const getEstadoData = (estadoValue) => {
     return estados.find(e => e.value === estadoValue) || estados[0];
+  };
+
+  const verDetallesProyecto = async (proyecto) => {
+    setProyectoDetalle(proyecto);
+    // Cargar tareas del proyecto
+    try {
+      const tareasSnapshot = await getDocs(collection(db, 'tareas'));
+      const todasTareas = tareasSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const tareasFiltradas = todasTareas.filter(t => t.proyectoId === proyecto.id);
+      setTareasProyecto(tareasFiltradas);
+
+      // Cargar avances (si existen)
+      setAvancesProyecto(proyecto.avances || []);
+    } catch (error) {
+      console.error('Error cargando detalles:', error);
+    }
+  };
+
+  const agregarAvance = async () => {
+    if (!nuevoAvance.trim() || !proyectoDetalle) return;
+
+    try {
+      const avances = proyectoDetalle.avances || [];
+      let nuevosAvances;
+
+      if (editingAvanceId) {
+        // Editar avance existente
+        nuevosAvances = avances.map(avance => {
+          if (avance.id === editingAvanceId) {
+            return {
+              ...avance,
+              texto: nuevoAvance,
+              documentos: documentosAvance,
+              fechaEdicion: new Date().toISOString()
+            };
+          }
+          return avance;
+        });
+      } else {
+        // Crear nuevo avance
+        const nuevoAvanceObj = {
+          id: Date.now().toString(),
+          texto: nuevoAvance,
+          fecha: new Date().toISOString(),
+          usuario: 'Usuario Actual',
+          documentos: documentosAvance // Incluir documentos adjuntos
+        };
+        nuevosAvances = [nuevoAvanceObj, ...avances];
+      }
+
+      // Actualizar en Firestore
+      const proyectoRef = doc(db, 'proyectos', proyectoDetalle.id);
+      await updateDoc(proyectoRef, { avances: nuevosAvances });
+
+      setAvancesProyecto(nuevosAvances);
+      setNuevoAvance('');
+      setDocumentosAvance([]);
+      setShowModalAvance(false);
+      setEditingAvanceId(null);
+
+      // Actualizar proyecto detalle
+      setProyectoDetalle({ ...proyectoDetalle, avances: nuevosAvances });
+      loadData();
+      alert(editingAvanceId ? 'Avance actualizado exitosamente' : 'Avance agregado exitosamente');
+    } catch (error) {
+      console.error('Error guardando avance:', error);
+      alert('Error al guardar avance');
+    }
+  };
+
+  const editarAvance = (avance) => {
+    setEditingAvanceId(avance.id);
+    setNuevoAvance(avance.texto);
+    setDocumentosAvance(avance.documentos || []);
+    setShowModalAvance(true);
+  };
+
+  const eliminarAvance = async (avanceId) => {
+    if (!window.confirm('¿Estás seguro de eliminar este avance?')) return;
+
+    try {
+      const avances = proyectoDetalle.avances || [];
+      const nuevosAvances = avances.filter(a => a.id !== avanceId);
+
+      // Actualizar en Firestore
+      const proyectoRef = doc(db, 'proyectos', proyectoDetalle.id);
+      await updateDoc(proyectoRef, { avances: nuevosAvances });
+
+      setAvancesProyecto(nuevosAvances);
+      setProyectoDetalle({ ...proyectoDetalle, avances: nuevosAvances });
+      loadData();
+      alert('Avance eliminado exitosamente');
+    } catch (error) {
+      console.error('Error eliminando avance:', error);
+      alert('Error al eliminar avance');
+    }
+  };
+
+  const subirDocumentoAvance = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !proyectoDetalle) return;
+
+    // Validar tipo de archivo
+    const tiposPermitidos = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'image/jpeg',
+      'image/png',
+      'image/jpg'
+    ];
+
+    if (!tiposPermitidos.includes(file.type)) {
+      alert('Solo se permiten archivos PDF, Word, Excel e imágenes');
+      return;
+    }
+
+    // Validar tamaño (máx 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('El archivo debe ser menor a 10MB');
+      return;
+    }
+
+    try {
+      setSubiendoDocumento(true);
+
+      // Subir a Firebase Storage
+      const fileName = `proyectos/${proyectoDetalle.id}/avances/${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, fileName);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+
+      // Crear objeto de documento
+      const nuevoDocumento = {
+        id: Date.now().toString(),
+        nombre: file.name,
+        url: url,
+        tipo: file.type,
+        tamano: file.size,
+        fecha: new Date().toISOString()
+      };
+
+      // Agregar al estado temporal
+      setDocumentosAvance([...documentosAvance, nuevoDocumento]);
+      alert('Documento agregado (se guardará con el avance)');
+    } catch (error) {
+      console.error('Error subiendo documento:', error);
+      alert('Error al subir documento: ' + error.message);
+    } finally {
+      setSubiendoDocumento(false);
+      e.target.value = ''; // Limpiar input
+    }
+  };
+
+  const eliminarDocumentoTemp = (docId) => {
+    setDocumentosAvance(documentosAvance.filter(d => d.id !== docId));
+  };
+
+  const formatearTamano = (bytes) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  };
+
+  const obtenerIconoDocumento = (tipo) => {
+    if (tipo.includes('pdf')) return '📄';
+    if (tipo.includes('word')) return '📝';
+    if (tipo.includes('excel') || tipo.includes('sheet')) return '📊';
+    if (tipo.includes('image')) return '🖼️';
+    return '📎';
   };
 
   return (
@@ -5711,14 +5908,23 @@ function ProyectosModule() {
                       <td className="px-6 py-4">
                         <div className="flex gap-2">
                           <button
+                            onClick={() => verDetallesProyecto(proyecto)}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-all"
+                            title="Ver Detalles"
+                          >
+                            <Info size={20} />
+                          </button>
+                          <button
                             onClick={() => handleEdit(proyecto)}
                             className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                            title="Editar"
                           >
                             <Edit2 size={20} />
                           </button>
                           <button
                             onClick={() => handleDelete(proyecto.id)}
                             className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                            title="Eliminar"
                           >
                             <Trash2 size={20} />
                           </button>
@@ -5732,6 +5938,310 @@ function ProyectosModule() {
           </div>
         )}
       </div>
+
+      {/* Modal de Detalles del Proyecto */}
+      {proyectoDetalle && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-6 rounded-t-xl flex justify-between items-center sticky top-0 z-10">
+              <div>
+                <h3 className="text-3xl font-bold">{proyectoDetalle.nombre}</h3>
+                <p className="text-blue-200 mt-1">{proyectoDetalle.descripcion}</p>
+              </div>
+              <button
+                onClick={() => setProyectoDetalle(null)}
+                className="text-white hover:bg-white/20 p-2 rounded-lg transition-all"
+              >
+                <X size={28} />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* Información General */}
+              <div className="bg-gray-50 rounded-lg p-6 mb-6">
+                <h4 className="text-xl font-bold text-gray-800 mb-4">📋 Información General</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-gray-600 font-semibold">Cliente:</p>
+                    <p className="text-gray-900 text-lg">{getClienteNombre(proyectoDetalle.clienteId)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600 font-semibold">Empresa:</p>
+                    <p className="text-gray-900 text-lg">{getEmpresaNombre(proyectoDetalle.empresaId)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600 font-semibold">Fecha Inicio:</p>
+                    <p className="text-gray-900 text-lg">
+                      {proyectoDetalle.fechaInicio ? new Date(proyectoDetalle.fechaInicio).toLocaleDateString('es-MX') : '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600 font-semibold">Fecha Fin:</p>
+                    <p className="text-gray-900 text-lg">
+                      {proyectoDetalle.fechaFin ? new Date(proyectoDetalle.fechaFin).toLocaleDateString('es-MX') : '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600 font-semibold">Presupuesto:</p>
+                    <p className="text-gray-900 text-lg font-bold">
+                      ${parseFloat(proyectoDetalle.presupuesto || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600 font-semibold">Estado:</p>
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getEstadoData(proyectoDetalle.estado).color}`}>
+                      {getEstadoData(proyectoDetalle.estado).label}
+                    </span>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-gray-600 font-semibold mb-2">Progreso: {proyectoDetalle.progreso || 0}%</p>
+                    <div className="w-full bg-gray-200 rounded-full h-4">
+                      <div
+                        className="bg-blue-600 h-4 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                        style={{ width: `${proyectoDetalle.progreso || 0}%` }}
+                      >
+                        {proyectoDetalle.progreso || 0}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                {/* Tareas del Proyecto */}
+                <div className="bg-gray-50 rounded-lg p-6">
+                  <h4 className="text-xl font-bold text-gray-800 mb-4">✅ Tareas del Proyecto</h4>
+                  {tareasProyecto.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-gray-500">No hay tareas asignadas a este proyecto</p>
+                      <p className="text-sm text-gray-400 mt-2">Crea tareas desde el módulo de Tareas y asígnalas a este proyecto</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {tareasProyecto.map(tarea => (
+                        <div key={tarea.id} className="bg-white p-4 rounded-lg border-l-4 border-blue-500">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <p className="font-semibold text-gray-800">{tarea.titulo}</p>
+                              <p className="text-sm text-gray-600 mt-1">{tarea.descripcion}</p>
+                              <div className="flex gap-2 mt-2">
+                                <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                                  tarea.prioridad === 'alta' ? 'bg-red-100 text-red-800' :
+                                  tarea.prioridad === 'media' ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-green-100 text-green-800'
+                                }`}>
+                                  {tarea.prioridad?.toUpperCase()}
+                                </span>
+                                <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                                  tarea.completada ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {tarea.completada ? 'Completada' : 'Pendiente'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Avances del Proyecto */}
+                <div className="bg-gray-50 rounded-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-xl font-bold text-gray-800">📝 Avances y Actualizaciones</h4>
+                    <button
+                      onClick={() => setShowModalAvance(true)}
+                      className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition-all"
+                    >
+                      <Plus size={20} />
+                      Nuevo Avance
+                    </button>
+                  </div>
+
+                  {/* Lista de avances */}
+                  {avancesProyecto.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-gray-500">No hay avances registrados</p>
+                      <p className="text-sm text-gray-400 mt-2">Agrega el primer avance del proyecto</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                      {avancesProyecto.map(avance => (
+                        <div key={avance.id} className="bg-white p-4 rounded-lg border-l-4 border-green-500">
+                          <div className="flex justify-between items-start mb-2">
+                            <p className="text-gray-800 flex-1">{avance.texto}</p>
+                            <div className="flex gap-1 ml-2">
+                              <button
+                                onClick={() => editarAvance(avance)}
+                                className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-all"
+                                title="Editar"
+                              >
+                                <Edit2 size={16} />
+                              </button>
+                              <button
+                                onClick={() => eliminarAvance(avance.id)}
+                                className="p-1 text-red-600 hover:bg-red-50 rounded transition-all"
+                                title="Eliminar"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Documentos adjuntos */}
+                          {avance.documentos && avance.documentos.length > 0 && (
+                            <div className="mt-3 space-y-2">
+                              <p className="text-xs font-semibold text-gray-600">📎 Documentos adjuntos:</p>
+                              {avance.documentos.map(doc => (
+                                <div key={doc.id} className="bg-gray-50 p-2 rounded flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-lg">{obtenerIconoDocumento(doc.tipo)}</span>
+                                    <div>
+                                      <p className="text-xs font-semibold text-gray-700">{doc.nombre}</p>
+                                      <p className="text-xs text-gray-500">{formatearTamano(doc.tamano)}</p>
+                                    </div>
+                                  </div>
+                                  <a
+                                    href={doc.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-all"
+                                    title="Abrir"
+                                  >
+                                    <ExternalLink size={16} />
+                                  </a>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-2 mt-3 text-xs text-gray-500">
+                            <Clock size={14} />
+                            <span>{new Date(avance.fecha).toLocaleString('es-MX')}</span>
+                            <span>• {avance.usuario}</span>
+                            {avance.fechaEdicion && (
+                              <>
+                                <span>• Editado: {new Date(avance.fechaEdicion).toLocaleString('es-MX')}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Nuevo Avance */}
+      {showModalAvance && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 text-white p-6 rounded-t-xl flex justify-between items-center sticky top-0 z-10">
+              <h3 className="text-2xl font-bold">📝 {editingAvanceId ? 'Editar Avance' : 'Nuevo Avance'}</h3>
+              <button
+                onClick={() => {
+                  setShowModalAvance(false);
+                  setNuevoAvance('');
+                  setDocumentosAvance([]);
+                  setEditingAvanceId(null);
+                }}
+                className="text-white hover:bg-white/20 p-2 rounded-lg transition-all"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* Campo de texto para el avance */}
+              <div className="mb-6">
+                <label className="block text-lg font-semibold text-gray-700 mb-2">Descripción del Avance *</label>
+                <textarea
+                  value={nuevoAvance}
+                  onChange={(e) => setNuevoAvance(e.target.value)}
+                  placeholder="Describe el avance o actualización del proyecto..."
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500"
+                  rows="5"
+                  required
+                />
+              </div>
+
+              {/* Sección de documentos adjuntos */}
+              <div className="mb-6">
+                <label className="block text-lg font-semibold text-gray-700 mb-2">Documentos Adjuntos</label>
+
+                {/* Área de carga */}
+                <label className="w-full flex flex-col items-center px-4 py-6 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-100 transition-all mb-4">
+                  <Paperclip size={40} className="text-gray-400 mb-2" />
+                  <span className="text-sm text-gray-600 text-center">
+                    {subiendoDocumento ? 'Subiendo...' : 'Click para adjuntar documento'}
+                  </span>
+                  <span className="text-xs text-gray-400 mt-1">PDF, Word, Excel, Imágenes (max 10MB)</span>
+                  <input
+                    type="file"
+                    onChange={subirDocumentoAvance}
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                    className="hidden"
+                    disabled={subiendoDocumento}
+                  />
+                </label>
+
+                {/* Lista de documentos adjuntos temporales */}
+                {documentosAvance.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-gray-600">Documentos a adjuntar:</p>
+                    {documentosAvance.map(doc => (
+                      <div key={doc.id} className="bg-white p-3 rounded-lg border border-gray-200 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{obtenerIconoDocumento(doc.tipo)}</span>
+                          <div>
+                            <p className="font-semibold text-gray-800 text-sm">{doc.nombre}</p>
+                            <p className="text-xs text-gray-500">{formatearTamano(doc.tamano)}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => eliminarDocumentoTemp(doc.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                          title="Eliminar"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Botones */}
+              <div className="flex gap-4">
+                <button
+                  onClick={agregarAvance}
+                  disabled={!nuevoAvance.trim()}
+                  className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all"
+                >
+                  Guardar Avance
+                </button>
+                <button
+                  onClick={() => {
+                    setShowModalAvance(false);
+                    setNuevoAvance('');
+                    setDocumentosAvance([]);
+                  }}
+                  className="bg-gray-300 text-gray-700 px-6 py-3 rounded-lg font-semibold hover:bg-gray-400 transition-all"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5764,6 +6274,7 @@ function OportunidadesModule({ currentUser }) {
   const [chatIAMessages, setChatIAMessages] = useState([]);
   const [enviandoMensajeIA, setEnviandoMensajeIA] = useState(false);
   const [mensajeUsuarioIA, setMensajeUsuarioIA] = useState('');
+  const [showEtapaInfo, setShowEtapaInfo] = useState(null);
   const [nuevaInteraccion, setNuevaInteraccion] = useState({
     tipo: 'llamada',
     descripcion: '',
@@ -5790,11 +6301,65 @@ function OportunidadesModule({ currentUser }) {
 
   const etapas = [
     { value: 'Contacto Inicial', label: 'Contacto Inicial', color: 'bg-blue-100 text-blue-800' },
+    { value: 'Calificación', label: 'Calificación', color: 'bg-cyan-100 text-cyan-800' },
+    { value: 'Análisis de Necesidades', label: 'Análisis de Necesidades', color: 'bg-indigo-100 text-indigo-800' },
+    { value: 'Presentación/Demo', label: 'Presentación/Demo', color: 'bg-pink-100 text-pink-800' },
     { value: 'Propuesta Enviada', label: 'Propuesta Enviada', color: 'bg-purple-100 text-purple-800' },
     { value: 'Negociación', label: 'Negociación', color: 'bg-yellow-100 text-yellow-800' },
     { value: 'Cerrado Ganado', label: 'Cerrado Ganado', color: 'bg-green-100 text-green-800' },
     { value: 'Cerrado Perdido', label: 'Cerrado Perdido', color: 'bg-red-100 text-red-800' }
   ];
+
+  const etapasInfo = {
+    'Contacto Inicial': {
+      descripcion: 'Primera interacción con el prospecto. Se establece comunicación y se identifica el interés inicial.',
+      objetivos: ['Establecer primer contacto', 'Identificar persona de contacto clave', 'Confirmar información básica'],
+      probabilidad: '10%',
+      duracion: '1-3 días'
+    },
+    'Calificación': {
+      descripcion: 'Evaluación de viabilidad del prospecto usando metodología BANT (Budget, Authority, Need, Timeline).',
+      objetivos: ['Confirmar presupuesto disponible', 'Identificar tomadores de decisión', 'Validar necesidad real', 'Establecer timeline'],
+      probabilidad: '20%',
+      duracion: '3-5 días'
+    },
+    'Análisis de Necesidades': {
+      descripcion: 'Reunión de descubrimiento profundo para entender pain points, objetivos de negocio y requerimientos específicos.',
+      objetivos: ['Mapear pain points actuales', 'Entender objetivos de negocio', 'Identificar todos los stakeholders', 'Documentar requerimientos'],
+      probabilidad: '35%',
+      duracion: '5-7 días'
+    },
+    'Presentación/Demo': {
+      descripcion: 'Demostración del producto/servicio adaptada a las necesidades específicas identificadas del cliente.',
+      objetivos: ['Presentar solución personalizada', 'Realizar demo interactiva', 'Responder objeciones técnicas', 'Asegurar buy-in de decision makers'],
+      probabilidad: '50%',
+      duracion: '3-5 días'
+    },
+    'Propuesta Enviada': {
+      descripcion: 'Envío de propuesta comercial formal con pricing, alcance, términos y condiciones.',
+      objetivos: ['Enviar propuesta detallada', 'Dar seguimiento a recepción', 'Resolver dudas sobre la propuesta', 'Agendar reunión de revisión'],
+      probabilidad: '60%',
+      duracion: '5-7 días'
+    },
+    'Negociación': {
+      descripcion: 'Discusión de términos finales, ajustes de precio, alcance y condiciones contractuales.',
+      objetivos: ['Negociar términos comerciales', 'Ajustar alcance si necesario', 'Resolver objeciones finales', 'Acordar condiciones de pago'],
+      probabilidad: '75%',
+      duracion: '3-10 días'
+    },
+    'Cerrado Ganado': {
+      descripcion: 'Oportunidad ganada. Cliente acepta propuesta y firma contrato.',
+      objetivos: ['Firma de contrato', 'Procesamiento de pago inicial', 'Iniciar proceso de onboarding', 'Celebrar el win! 🎉'],
+      probabilidad: '95%',
+      duracion: '1-2 días'
+    },
+    'Cerrado Perdido': {
+      descripcion: 'Oportunidad perdida. Cliente decidió no continuar o eligió otra opción.',
+      objetivos: ['Documentar razón de pérdida', 'Solicitar feedback', 'Identificar aprendizajes', 'Mantener relación para futuro'],
+      probabilidad: '0%',
+      duracion: '-'
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -6076,6 +6641,21 @@ function OportunidadesModule({ currentUser }) {
             titulo: `Realizar seguimiento inicial: ${oportunidad.nombre}`,
             descripcion: `Contactar al cliente para discutir necesidades y expectativas.\nCliente: ${oportunidad.clienteNombre}\nEmail: ${oportunidad.clienteEmail || 'No especificado'}`,
             dias: 1
+          },
+          'Calificación': {
+            titulo: `Calificar oportunidad: ${oportunidad.nombre}`,
+            descripcion: `Evaluar viabilidad del lead: presupuesto, autoridad, necesidad, tiempo (BANT).\nCliente: ${oportunidad.clienteNombre}\nValor estimado: $${oportunidad.valor}`,
+            dias: 2
+          },
+          'Análisis de Necesidades': {
+            titulo: `Análisis profundo de necesidades: ${oportunidad.nombre}`,
+            descripcion: `Reunión de descubrimiento: pain points, objetivos, stakeholders.\nCliente: ${oportunidad.clienteNombre}\nPreparar documento de requerimientos`,
+            dias: 3
+          },
+          'Presentación/Demo': {
+            titulo: `Preparar y realizar presentación: ${oportunidad.nombre}`,
+            descripcion: `Demo del producto/servicio adaptado a necesidades del cliente.\nAsegurar asistencia de decision makers.\nCliente: ${oportunidad.clienteNombre}`,
+            dias: 3
           },
           'Propuesta Enviada': {
             titulo: `Hacer seguimiento de propuesta: ${oportunidad.nombre}`,
@@ -6799,7 +7379,19 @@ Responde en formato JSON:
                 onDrop={(e) => handleDrop(e, etapa.value)}
               >
                 <div className="flex items-center justify-between mb-4">
-                  <h4 className="font-semibold text-gray-900">{etapa.label}</h4>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-semibold text-gray-900">{etapa.label}</h4>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowEtapaInfo(etapa.value);
+                      }}
+                      className="text-gray-400 hover:text-blue-600 transition-colors"
+                      title="Información de esta etapa"
+                    >
+                      <HelpCircle size={18} />
+                    </button>
+                  </div>
                   <span className={`px-2 py-1 text-xs font-semibold rounded-full ${etapa.color}`}>
                     {getOportunidadesPorEtapa(etapa.value).length}
                   </span>
@@ -7874,6 +8466,71 @@ Responde en formato JSON:
         </div>
         );
       })()}
+
+      {/* Modal de Información de Etapas */}
+      {showEtapaInfo && etapasInfo[showEtapaInfo] && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 rounded-t-xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-bold">{showEtapaInfo}</h3>
+                  <p className="text-blue-100 mt-1">Probabilidad de cierre: {etapasInfo[showEtapaInfo].probabilidad}</p>
+                </div>
+                <button
+                  onClick={() => setShowEtapaInfo(null)}
+                  className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition-all"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {/* Descripción */}
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold text-gray-900 mb-2">📋 Descripción</h4>
+                <p className="text-gray-700">{etapasInfo[showEtapaInfo].descripcion}</p>
+              </div>
+
+              {/* Objetivos */}
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold text-gray-900 mb-3">🎯 Objetivos de esta etapa</h4>
+                <ul className="space-y-2">
+                  {etapasInfo[showEtapaInfo].objetivos.map((objetivo, index) => (
+                    <li key={index} className="flex items-start gap-2">
+                      <span className="text-green-600 mt-1">✓</span>
+                      <span className="text-gray-700">{objetivo}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Duración y Probabilidad */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <p className="text-sm text-blue-600 font-medium mb-1">⏱️ Duración típica</p>
+                  <p className="text-xl font-bold text-blue-900">{etapasInfo[showEtapaInfo].duracion}</p>
+                </div>
+                <div className="bg-green-50 rounded-lg p-4">
+                  <p className="text-sm text-green-600 font-medium mb-1">📊 Probabilidad base</p>
+                  <p className="text-xl font-bold text-green-900">{etapasInfo[showEtapaInfo].probabilidad}</p>
+                </div>
+              </div>
+
+              {/* Botón cerrar */}
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => setShowEtapaInfo(null)}
+                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
+                >
+                  Entendido
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -7922,7 +8579,7 @@ function ReportesModule() {
       const valorTotalOportunidades = oportunidades.reduce((sum, op) => sum + (parseFloat(op.valor) || 0), 0);
 
       // Oportunidades por etapa
-      const etapas = ['Contacto Inicial', 'Propuesta Enviada', 'Negociación', 'Cerrado Ganado', 'Cerrado Perdido'];
+      const etapas = ['Contacto Inicial', 'Calificación', 'Análisis de Necesidades', 'Presentación/Demo', 'Propuesta Enviada', 'Negociación', 'Cerrado Ganado', 'Cerrado Perdido'];
       const oportunidadesPorEtapa = etapas.map(etapa => ({
         etapa,
         cantidad: oportunidades.filter(op => op.etapa === etapa).length
@@ -10135,56 +10792,76 @@ function AIChatbot() {
     e.preventDefault();
     if (!inputMessage.trim() || isLoading) return;
 
-    const userMessage = inputMessage.trim();
+    const userMessage = inputMessage.trim().toLowerCase();
+    const originalMessage = inputMessage.trim();
     setInputMessage('');
 
     // Agregar mensaje del usuario
-    const newMessages = [...messages, { role: 'user', content: userMessage }];
+    const newMessages = [...messages, { role: 'user', content: originalMessage }];
     setMessages(newMessages);
     setIsLoading(true);
 
-    try {
-      // Llamada a OpenAI API
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.REACT_APP_OPENAI_API_KEY || 'sk-proj-PLACEHOLDER'}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4',
-          messages: [
-            {
-              role: 'system',
-              content: 'Eres un asistente experto en CRM y ventas. Ayudas a los usuarios del sistema GRX CRM a gestionar sus leads, oportunidades, clientes y procesos de venta. Responde de manera clara, concisa y profesional.'
-            },
-            ...newMessages
-          ],
-          temperature: 0.7,
-          max_tokens: 500
-        })
-      });
+    // Simular delay de IA
+    setTimeout(() => {
+      let response = '';
 
-      if (!response.ok) {
-        throw new Error('Error en la API de OpenAI');
+      // Sistema de respuestas inteligente
+      if (userMessage.match(/hola|hi|buenos|buenas|hey/)) {
+        response = '¡Hola! 👋 Soy tu asistente inteligente de GRX CRM.\n\nPuedo ayudarte con:\n• 📊 Gestión de Leads y Scoring\n• 💼 Pipeline de Oportunidades\n• 👥 Clientes y Contactos\n• ✅ Tareas y Calendario\n• 📈 Reportes y KPIs\n• ⚙️ Configuración del sistema\n\n¿En qué puedo ayudarte hoy?';
+      }
+      else if (userMessage.match(/lead|prospecto/)) {
+        response = '📊 **Sistema de Gestión de Leads**\n\n**Características principales:**\n• Lead Score automático (0-100 puntos)\n• Calificación por múltiples factores\n• Seguimiento de fuente de origen\n• Historial completo de interacciones\n\n**Lead Score se calcula con:**\n✓ Fuente del lead (25 pts)\n✓ Tamaño de empresa (20 pts)\n✓ Calidad de datos (20 pts)\n✓ Frecuencia de interacciones (20 pts)\n✓ Tiempo de respuesta (15 pts)\n\n**Acciones disponibles:**\n→ Crear nuevo lead desde módulo Clientes\n→ Filtrar por score, estado, fecha\n→ Exportar a Excel\n→ Convertir a oportunidad\n\n¿Necesitas ayuda con algo específico de leads?';
+      }
+      else if (userMessage.match(/oportunidad|pipeline|venta|cierre|deal/)) {
+        response = '💼 **Pipeline de Oportunidades**\n\n**5 Etapas del Pipeline:**\n1️⃣ Prospecto (10% probabilidad)\n2️⃣ Calificación (25% probabilidad)\n3️⃣ Propuesta (50% probabilidad)\n4️⃣ Negociación (75% probabilidad)\n5️⃣ Cierre (90% probabilidad)\n\n**Funcionalidades:**\n• Kanban drag & drop\n• Cálculo automático de probabilidad\n• Valor total del pipeline\n• Tiempo promedio por etapa\n• Asociación con clientes y proyectos\n\n**IA Predictiva:**\nEl sistema calcula probabilidad de cierre basándose en:\n→ Etapa actual\n→ Valor del deal\n→ Interacciones recientes\n→ Días en la etapa\n\n¿Quieres saber cómo mover una oportunidad?';
+      }
+      else if (userMessage.match(/dashboard|kpi|métrica|estadística/)) {
+        response = '📈 **Dashboard y KPIs**\n\n**Métricas Principales:**\n📊 Total de Leads\n📈 Tasa de Conversión\n💰 Valor Total Pipeline\n🎯 Oportunidades Activas\n⏱️ Tiempo Promedio de Cierre\n\n**Visualizaciones:**\n• Gráfica de barras: Leads por fuente\n• Gráfica de pastel: Oportunidades por etapa\n• Timeline: Actividad reciente del equipo\n• Tabla: Top clientes y deals\n\n**Datos en tiempo real:**\nTodo se actualiza automáticamente desde Firebase\n\n**Exportación:**\nPuedes exportar cualquier métrica a Excel\n\n¿Qué KPI te interesa analizar?';
+      }
+      else if (userMessage.match(/cliente|contacto/)) {
+        response = '👥 **Gestión de Clientes**\n\n**Base de Datos Completa:**\n• Clientes y Leads unificados\n• Información de contacto\n• Empresa y sector\n• Ubicación geográfica\n\n**Historial 360°:**\n→ Todas las interacciones\n→ Oportunidades asociadas\n→ Tareas pendientes\n→ Proyectos activos\n→ Notas y adjuntos\n\n**Segmentación:**\nFiltra por tipo, sector, ubicación, estado\n\n**Lead Score:**\nCada lead tiene puntuación de 0-100\n\n**Acciones rápidas:**\n• Crear interacción\n• Asignar tarea\n• Generar oportunidad\n• Exportar datos\n\n¿Necesitas ayuda para gestionar un cliente?';
+      }
+      else if (userMessage.match(/tarea|actividad|pendiente|to-do/)) {
+        response = '✅ **Sistema de Tareas**\n\n**Gestión Completa:**\n• Título y descripción\n• Prioridad: Alta 🔴 Media 🟡 Baja 🟢\n• Fecha límite y recordatorios\n• Asignación a usuarios\n• Estado: Pendiente/Completada\n\n**Asociaciones:**\nVincula tareas con:\n→ Clientes\n→ Oportunidades\n→ Proyectos\n\n**Vista de Calendario:**\nTodas tus tareas en vista mensual integrada\n\n**Notificaciones:**\nAlertas automáticas para:\n• Tareas próximas a vencer\n• Tareas vencidas\n• Nuevas asignaciones\n\n**Productividad:**\nFiltros por prioridad, estado, responsable\n\n¿Quieres crear una tarea nueva?';
+      }
+      else if (userMessage.match(/reporte|análisis|informe/)) {
+        response = '📊 **Módulo de Reportes**\n\n**Reportes Disponibles:**\n\n1. **Performance de Ventas**\n   → Conversión de leads\n   → Oportunidades ganadas/perdidas\n   → Valor promedio de deals\n   → Tasa de cierre\n\n2. **Actividad del Equipo**\n   → Interacciones por usuario\n   → Tareas completadas\n   → Tiempo de respuesta\n\n3. **Pipeline Analytics**\n   → Distribución por etapa\n   → Tiempo en cada etapa\n   → Embudo de conversión\n\n4. **Clientes**\n   → Segmentación geográfica\n   → Por sector/industria\n   → Clientes más activos\n\n**Exportación:**\nTodos los reportes se exportan a Excel\n\n**Filtros:**\nPor fecha, empresa, usuario, proyecto\n\n¿Qué tipo de reporte necesitas?';
+      }
+      else if (userMessage.match(/calendario|agenda/)) {
+        response = '📅 **Calendario Unificado**\n\n**Vista Mensual:**\n• Todas tus tareas\n• Interacciones programadas\n• Reuniones y llamadas\n• Eventos importantes\n\n**Navegación:**\n← → Moverse entre meses\n🔍 Buscar eventos específicos\n\n**Códigos de Color:**\n🔴 Prioridad Alta\n🟡 Prioridad Media\n🟢 Prioridad Baja\n📞 Llamadas\n📧 Emails\n🤝 Reuniones\n\n**Sincronización:**\nActualización en tiempo real\n\n**Filtros:**\n• Por tipo de actividad\n• Por responsable\n• Por cliente/proyecto\n\n¿Necesitas programar algo?';
+      }
+      else if (userMessage.match(/usuario|equipo|permiso|rol/)) {
+        response = '👤 **Gestión de Usuarios**\n\n**Roles Disponibles:**\n\n🔴 **Administrador**\n→ Acceso total al sistema\n→ Gestiona empresas y usuarios\n→ Configuración global\n\n🔵 **Gerente**\n→ Gestiona su equipo\n→ Ve reportes completos\n→ Asigna tareas\n\n🟢 **Ejecutivo**\n→ Gestiona sus clientes\n→ Crea oportunidades\n→ Reporta actividad\n\n⚪ **Invitado**\n→ Solo lectura\n→ Acceso limitado\n\n**Permisos:**\nCada rol tiene permisos específicos en cada módulo\n\n**Multi-empresa:**\nUsuarios pueden pertenecer a múltiples empresas\n\n¿Necesitas crear o modificar usuarios?';
+      }
+      else if (userMessage.match(/empresa|organización|tenant/)) {
+        response = '🏢 **Sistema Multi-Empresa**\n\n**Características:**\n• Aislamiento total de datos\n• Configuración independiente\n• Usuarios por empresa\n• Proyectos por empresa\n\n**Personalización:**\n→ Logo personalizado\n→ Colores corporativos\n→ Datos de contacto\n→ Configuración regional\n\n**Gestión:**\nSolo administradores pueden:\n• Crear empresas\n• Asignar usuarios\n• Configurar permisos\n• Ver datos consolidados\n\n**Multi-tenant:**\nIdeal para:\n• Holdings\n• Grupos empresariales\n• Agencias\n• Consultoras\n\n¿Quieres configurar una nueva empresa?';
+      }
+      else if (userMessage.match(/export|excel|descargar|csv/)) {
+        response = '📥 **Exportación de Datos**\n\n**Módulos con Exportación:**\n✅ Clientes y Leads\n✅ Oportunidades\n✅ Tareas\n✅ Interacciones\n✅ Proyectos\n✅ Reportes\n✅ Usuarios\n\n**Formato:**\nArchivos Excel (.xlsx)\nCompatible con:\n→ Microsoft Excel\n→ Google Sheets\n→ LibreOffice\n\n**Contenido:**\n• Todos los campos visibles\n• Datos filtrados actuales\n• Formato organizado\n• Listo para análisis\n\n**Cómo exportar:**\n1. Ve al módulo deseado\n2. Aplica filtros si necesitas\n3. Click en botón "Descargar Excel"\n4. Archivo se descarga automáticamente\n\n¿Qué datos necesitas exportar?';
+      }
+      else if (userMessage.match(/interacción|llamada|email|reunión|contacto/)) {
+        response = '📞 **Gestión de Interacciones**\n\n**Tipos de Interacción:**\n📞 Llamadas telefónicas\n📧 Emails\n🤝 Reuniones presenciales\n💬 WhatsApp/Chat\n📄 Presentaciones\n\n**Registro Completo:**\n• Fecha y hora\n• Tipo de interacción\n• Cliente asociado\n• Oportunidad relacionada\n• Notas detalladas\n• Resultado/Siguiente paso\n\n**Seguimiento:**\nHistorial completo por cliente\n\n**Analytics:**\n→ Frecuencia de contacto\n→ Efectividad por tipo\n→ Tiempo de respuesta\n\n**Automatización:**\nCrea tareas de seguimiento automáticas\n\n¿Necesitas registrar una interacción?';
+      }
+      else if (userMessage.match(/proyecto/)) {
+        response = '📁 **Gestión de Proyectos**\n\n**Características:**\n• Proyectos por empresa\n• Múltiples clientes por proyecto\n• Oportunidades asociadas\n• Equipo asignado\n• Timeline y milestones\n\n**Información:**\n→ Nombre y descripción\n→ Fecha inicio/fin\n→ Presupuesto\n→ Estado (Activo/Pausado/Completado)\n\n**Seguimiento:**\n• Tareas del proyecto\n• Interacciones relacionadas\n• Progreso general\n• Documentos adjuntos\n\n**Reportes:**\nEstadísticas por proyecto\n\n¿Quieres crear un proyecto nuevo?';
+      }
+      else if (userMessage.match(/ayuda|help|cómo|como|qué puedes|que puedes/)) {
+        response = '🤝 **Guía de Ayuda - GRX CRM**\n\n**Módulos Principales:**\n\n📊 **Dashboard** - KPIs y métricas en tiempo real\n🏢 **Empresas** - Gestión multi-tenant\n👤 **Usuarios** - Roles y permisos\n👥 **Clientes** - Base de datos completa\n📞 **Interacciones** - Historial de contacto\n✅ **Tareas** - Gestión de actividades\n📅 **Calendario** - Vista unificada\n📁 **Proyectos** - Organización de trabajo\n💼 **Oportunidades** - Pipeline de ventas\n📊 **Reportes** - Analytics avanzados\n🔔 **Notificaciones** - Alertas automáticas\n🔌 **Integraciones** - APIs externas\n⚙️ **Configuración** - Personalización\n\n**IA Predictiva:**\n• Lead Scoring automático\n• Probabilidad de cierre\n• Recomendaciones inteligentes\n\n¿Sobre qué módulo necesitas ayuda?';
+      }
+      else if (userMessage.match(/gracias|thanks|ok|perfecto|excelente/)) {
+        response = '¡De nada! 😊\n\nEstoy aquí 24/7 para ayudarte con GRX CRM.\n\nSi necesitas algo más, solo pregúntame.\n\n¡Que tengas un excelente día! 🚀';
+      }
+      else if (userMessage.match(/score|scoring|puntuación/)) {
+        response = '🎯 **Sistema de Lead Scoring**\n\n**Puntuación automática de 0-100**\n\n**Factores de Cálculo:**\n\n1. **Fuente del Lead (25 pts)**\n   • Web: 25 pts\n   • Referido: 20 pts\n   • Evento: 18 pts\n   • Redes Sociales: 15 pts\n   • Email Marketing: 12 pts\n   • Llamada fría: 8 pts\n\n2. **Tamaño Empresa (20 pts)**\n   • Corporativo: 20 pts\n   • Mediana: 15 pts\n   • Pequeña: 10 pts\n\n3. **Calidad Datos (20 pts)**\n   • Completo: 20 pts\n   • Parcial: 10-15 pts\n\n4. **Interacciones (20 pts)**\n   • 5+ contactos: 20 pts\n   • 3-4 contactos: 15 pts\n   • 1-2 contactos: 10 pts\n\n5. **Tiempo Respuesta (15 pts)**\n   • Reciente: 15 pts\n   • Activo: 10 pts\n   • Antiguo: 5 pts\n\n**Interpretación:**\n🟢 80-100: Excelente\n🟡 60-79: Bueno\n🟠 40-59: Regular\n🔴 0-39: Bajo\n\n¿Quieres saber más?';
+      }
+      else {
+        // Respuesta genérica inteligente
+        response = `Entiendo tu pregunta sobre "${originalMessage}" 🤔\n\n**Te puedo ayudar con:**\n\n📊 **Gestión de Leads**\n→ Scoring, calificación, seguimiento\n\n💼 **Pipeline de Ventas**\n→ Oportunidades, etapas, probabilidades\n\n👥 **Clientes**\n→ Base de datos, historial, segmentación\n\n✅ **Tareas y Calendario**\n→ Productividad, recordatorios, agenda\n\n📈 **Reportes y Analytics**\n→ KPIs, métricas, exportación\n\n⚙️ **Configuración**\n→ Usuarios, permisos, personalización\n\n¿Podrías ser más específico sobre qué necesitas? Pregúntame sobre cualquier módulo.`;
       }
 
-      const data = await response.json();
-      const assistantMessage = data.choices[0].message.content;
-
-      setMessages([...newMessages, { role: 'assistant', content: assistantMessage }]);
-    } catch (error) {
-      console.error('Error llamando a OpenAI:', error);
-      setMessages([
-        ...newMessages,
-        {
-          role: 'assistant',
-          content: '❌ Lo siento, hubo un error al procesar tu mensaje. Por favor, configura tu API Key de OpenAI en las variables de entorno (REACT_APP_OPENAI_API_KEY).'
-        }
-      ]);
-    } finally {
+      setMessages([...newMessages, { role: 'assistant', content: response }]);
       setIsLoading(false);
-    }
+    }, 600);
   };
 
   return (
